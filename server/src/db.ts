@@ -1,0 +1,192 @@
+import Database from "better-sqlite3";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const DATA_DIR = join(here, "..", "..", "data");
+mkdirSync(DATA_DIR, { recursive: true });
+
+export const db = new Database(join(DATA_DIR, "cap-network.sqlite"));
+db.pragma("journal_mode = WAL");
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS devices (
+    id          TEXT PRIMARY KEY,   -- mac (preferred) or "ip:<addr>" fallback
+    mac         TEXT,
+    ip          TEXT,
+    hostname    TEXT,
+    vendor      TEXT,
+    os_guess    TEXT,               -- coarse OS family from TTL
+    label       TEXT,               -- user-assigned friendly name
+    trusted     INTEGER NOT NULL DEFAULT 0,
+    is_gateway  INTEGER NOT NULL DEFAULT 0,
+    is_self     INTEGER NOT NULL DEFAULT 0,
+    randomized  INTEGER NOT NULL DEFAULT 0,
+    online      INTEGER NOT NULL DEFAULT 0,
+    first_seen  INTEGER NOT NULL,
+    last_seen   INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts         INTEGER NOT NULL,
+    type       TEXT NOT NULL,       -- new_device | online | offline
+    device_id  TEXT NOT NULL,
+    detail     TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts DESC);
+`);
+
+// --- lightweight migrations (safe to run every boot) ---
+function addColumnIfMissing(table: string, column: string, type: string): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
+addColumnIfMissing("devices", "os_guess", "TEXT");
+
+export interface DeviceRow {
+  id: string;
+  mac: string | null;
+  ip: string | null;
+  hostname: string | null;
+  vendor: string | null;
+  os_guess: string | null;
+  label: string | null;
+  trusted: number;
+  is_gateway: number;
+  is_self: number;
+  randomized: number;
+  online: number;
+  first_seen: number;
+  last_seen: number;
+}
+
+export interface EventRow {
+  id: number;
+  ts: number;
+  type: string;
+  device_id: string;
+  detail: string | null;
+}
+
+const getDevice = db.prepare<[string], DeviceRow>("SELECT * FROM devices WHERE id = ?");
+const listDevicesStmt = db.prepare<[], DeviceRow>("SELECT * FROM devices ORDER BY last_seen DESC");
+const insertEvent = db.prepare(
+  "INSERT INTO events (ts, type, device_id, detail) VALUES (?, ?, ?, ?)"
+);
+const recentEventsStmt = db.prepare<[number], EventRow>(
+  "SELECT * FROM events ORDER BY ts DESC LIMIT ?"
+);
+
+export function listDevices(): DeviceRow[] {
+  return listDevicesStmt.all();
+}
+
+export function getDeviceById(id: string): DeviceRow | undefined {
+  return getDevice.get(id);
+}
+
+/** Friendly display name for a device: label > hostname > vendor + last octet. */
+export function displayNameOf(d: DeviceRow): string {
+  if (d.label) return d.label;
+  if (d.hostname) return d.hostname;
+  const tail = d.ip?.split(".").pop() ?? "?";
+  if (d.vendor && !d.vendor.startsWith("Private")) return `${d.vendor} · .${tail}`;
+  return `Unknown · .${tail}`;
+}
+
+export function recentEvents(limit = 100): EventRow[] {
+  return recentEventsStmt.all(limit);
+}
+
+export function setLabel(id: string, label: string | null): void {
+  db.prepare("UPDATE devices SET label = ? WHERE id = ?").run(label, id);
+}
+
+export function setTrusted(id: string, trusted: boolean): void {
+  db.prepare("UPDATE devices SET trusted = ? WHERE id = ?").run(trusted ? 1 : 0, id);
+}
+
+const upsertDevice = db.prepare(`
+  INSERT INTO devices (id, mac, ip, hostname, vendor, os_guess, trusted, is_gateway, is_self, randomized, online, first_seen, last_seen)
+  VALUES (@id, @mac, @ip, @hostname, @vendor, @os_guess, 0, @is_gateway, @is_self, @randomized, 1, @now, @now)
+  ON CONFLICT(id) DO UPDATE SET
+    mac        = COALESCE(excluded.mac, devices.mac),
+    ip         = excluded.ip,
+    hostname   = COALESCE(excluded.hostname, devices.hostname),
+    vendor     = COALESCE(excluded.vendor, devices.vendor),
+    os_guess   = COALESCE(excluded.os_guess, devices.os_guess),
+    is_gateway = excluded.is_gateway,
+    is_self    = excluded.is_self,
+    randomized = excluded.randomized,
+    online     = 1,
+    last_seen  = excluded.last_seen
+`);
+
+export interface SeenDevice {
+  id: string;
+  mac: string | null;
+  ip: string;
+  hostname: string | null;
+  vendor: string | null;
+  os_guess: string | null;
+  is_gateway: boolean;
+  is_self: boolean;
+  randomized: boolean;
+}
+
+export interface ScanDiff {
+  newDevices: string[];    // device ids seen for the first time
+  cameOnline: string[];    // were offline, now online
+  wentOffline: string[];   // were online, now absent
+}
+
+/**
+ * Apply a scan's results transactionally: upsert everything seen, mark absent
+ * devices offline, and record events for the transitions.
+ */
+export const applyScan = db.transaction((seen: SeenDevice[], now: number): ScanDiff => {
+  const diff: ScanDiff = { newDevices: [], cameOnline: [], wentOffline: [] };
+  const seenIds = new Set(seen.map((d) => d.id));
+
+  for (const d of seen) {
+    const prior = getDevice.get(d.id);
+    upsertDevice.run({
+      id: d.id,
+      mac: d.mac,
+      ip: d.ip,
+      hostname: d.hostname,
+      vendor: d.vendor,
+      os_guess: d.os_guess,
+      is_gateway: d.is_gateway ? 1 : 0,
+      is_self: d.is_self ? 1 : 0,
+      randomized: d.randomized ? 1 : 0,
+      now,
+    });
+    if (!prior) {
+      diff.newDevices.push(d.id);
+      insertEvent.run(now, "new_device", d.id, JSON.stringify({ ip: d.ip, vendor: d.vendor }));
+    } else if (prior.online === 0) {
+      diff.cameOnline.push(d.id);
+      insertEvent.run(now, "online", d.id, JSON.stringify({ ip: d.ip }));
+    }
+  }
+
+  // Anything currently online but not in this scan → mark offline.
+  const online = db.prepare<[], DeviceRow>("SELECT * FROM devices WHERE online = 1").all();
+  const markOffline = db.prepare("UPDATE devices SET online = 0 WHERE id = ?");
+  for (const dev of online) {
+    if (!seenIds.has(dev.id)) {
+      markOffline.run(dev.id);
+      diff.wentOffline.push(dev.id);
+      insertEvent.run(now, "offline", dev.id, JSON.stringify({ ip: dev.ip }));
+    }
+  }
+
+  return diff;
+});

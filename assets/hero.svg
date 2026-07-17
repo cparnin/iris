@@ -1,0 +1,49 @@
+<svg width="1280" height="360" viewBox="0 0 1280 360" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Iris — god-mode for your home network">
+  <defs>
+    <radialGradient id="bgGlow" cx="26%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#0e2a2a"/>
+      <stop offset="100%" stop-color="#0a0b0f"/>
+    </radialGradient>
+    <radialGradient id="iris2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="55%" stop-color="#0ea5a4"/>
+      <stop offset="100%" stop-color="#0b3b3a"/>
+    </radialGradient>
+    <linearGradient id="sweep2" x1="190" y1="180" x2="300" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#34d399" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#34d399" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="wordmark" x1="470" y1="120" x2="900" y2="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#9ff3d8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="360" fill="url(#bgGlow)"/>
+
+  <!-- ===== eye mark, centered around (190,180) ===== -->
+  <g transform="translate(80,70)">
+    <circle cx="110" cy="110" r="100" stroke="#182231" stroke-width="1.5"/>
+    <circle cx="110" cy="110" r="74" stroke="#182231" stroke-width="1.5"/>
+    <circle cx="110" cy="110" r="48" stroke="#243244" stroke-width="1.5"/>
+    <path d="M110 110 L210 110 A100 100 0 0 0 178 39 Z" fill="url(#sweep2)"/>
+    <path d="M14 110 Q110 26 206 110 Q110 194 14 110 Z" stroke="#34d399" stroke-width="3.5" fill="none" opacity="0.85"/>
+    <circle cx="110" cy="110" r="44" fill="url(#iris2)"/>
+    <circle cx="110" cy="110" r="44" stroke="#34d399" stroke-width="2" opacity="0.6"/>
+    <line x1="110" y1="110" x2="156" y2="74" stroke="#7dd3fc" stroke-width="1.5" opacity="0.7"/>
+    <line x1="110" y1="110" x2="64" y2="84" stroke="#7dd3fc" stroke-width="1.5" opacity="0.7"/>
+    <line x1="110" y1="110" x2="138" y2="152" stroke="#7dd3fc" stroke-width="1.5" opacity="0.7"/>
+    <line x1="110" y1="110" x2="78" y2="148" stroke="#7dd3fc" stroke-width="1.5" opacity="0.7"/>
+    <circle cx="156" cy="74" r="5.5" fill="#7dd3fc"/>
+    <circle cx="64" cy="84" r="5.5" fill="#7dd3fc"/>
+    <circle cx="138" cy="152" r="5.5" fill="#7dd3fc"/>
+    <circle cx="78" cy="148" r="5.5" fill="#7dd3fc"/>
+    <circle cx="110" cy="110" r="16" fill="#0a0b0f" stroke="#34d399" stroke-width="2.5"/>
+    <circle cx="110" cy="110" r="6" fill="#34d399"/>
+  </g>
+
+  <!-- ===== wordmark ===== -->
+  <text x="360" y="175" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="104" font-weight="800" fill="url(#wordmark)" letter-spacing="-2">Iris</text>
+  <text x="364" y="222" font-family="ui-sans-serif, system-ui, Segoe UI, Roboto, sans-serif" font-size="30" font-weight="600" fill="#34d399">god-mode for your home network</text>
+  <text x="364" y="262" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" fill="#5b6472">every device · live status · new-device alerts · zero router login</text>
+</svg>

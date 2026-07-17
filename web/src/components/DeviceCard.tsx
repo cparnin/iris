@@ -1,0 +1,101 @@
+import { useState } from "react";
+import type { Device } from "../api.js";
+import { displayName } from "../api.js";
+import { deviceIcon, relTime } from "../deviceMeta.js";
+
+interface Props {
+  device: Device;
+  isNew: boolean;
+  onRename: (id: string, label: string) => void;
+  onTrust: (id: string, trusted: boolean) => void;
+}
+
+export function DeviceCard({ device: d, isNew, onRename, onTrust }: Props) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(d.label ?? "");
+  const online = d.online === 1;
+
+  return (
+    <div
+      className={`group relative rounded-xl border p-4 transition-colors ${
+        online
+          ? "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+          : "border-white/5 bg-white/[0.01] opacity-60 hover:opacity-90"
+      } ${isNew ? "ring-2 ring-amber-400/60" : ""}`}
+    >
+      {isNew && (
+        <span className="absolute -top-2 left-3 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-bold text-black">
+          NEW
+        </span>
+      )}
+      <div className="flex items-start gap-3">
+        <div className="text-2xl leading-none">{deviceIcon(d)}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                online ? "bg-emerald-400 online-dot" : "bg-zinc-600"
+              }`}
+            />
+            {editing ? (
+              <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={() => {
+                  setEditing(false);
+                  if (draft !== (d.label ?? "")) onRename(d.id, draft);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  if (e.key === "Escape") {
+                    setDraft(d.label ?? "");
+                    setEditing(false);
+                  }
+                }}
+                placeholder="name this device"
+                className="w-full rounded bg-black/40 px-1 text-sm text-white outline-none ring-1 ring-white/20"
+              />
+            ) : (
+              <button
+                onClick={() => setEditing(true)}
+                className="truncate text-left text-sm font-semibold text-white hover:underline"
+                title="Click to rename"
+              >
+                {displayName(d)}
+              </button>
+            )}
+          </div>
+          <div className="mt-1 font-mono text-xs text-zinc-400">{d.ip}</div>
+          <div className="mt-0.5 truncate text-xs text-zinc-500">
+            {d.vendor ?? "unknown vendor"}
+            {d.is_gateway ? " · gateway" : ""}
+            {d.is_self ? " · this machine" : ""}
+          </div>
+          {d.os_guess && (
+            <div className="mt-1 inline-block rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400">
+              {d.os_guess}
+            </div>
+          )}
+          <div className="mt-2 flex items-center gap-2 font-mono text-[10px] text-zinc-600">
+            <span>{d.mac ?? "no mac"}</span>
+          </div>
+          <div className="mt-0.5 text-[10px] text-zinc-600">
+            {online ? "online now" : `last seen ${relTime(d.last_seen)}`}
+          </div>
+        </div>
+        <button
+          onClick={() => onTrust(d.id, d.trusted === 0)}
+          title={d.trusted ? "Trusted device" : "Mark as trusted"}
+          className={`shrink-0 rounded-md px-2 py-1 text-xs transition-colors ${
+            d.trusted
+              ? "bg-emerald-500/15 text-emerald-300"
+              : "bg-white/5 text-zinc-500 opacity-0 group-hover:opacity-100 hover:bg-white/10"
+          }`}
+        >
+          {d.trusted ? "✓ trusted" : "trust"}
+        </button>
+      </div>
+    </div>
+  );
+}

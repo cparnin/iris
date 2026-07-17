@@ -1,0 +1,45 @@
+<svg width="220" height="220" viewBox="0 0 220 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Iris logo">
+  <defs>
+    <radialGradient id="irisGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="55%" stop-color="#0ea5a4"/>
+      <stop offset="100%" stop-color="#0b3b3a"/>
+    </radialGradient>
+    <linearGradient id="sweep" x1="110" y1="110" x2="200" y2="70" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#34d399" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#34d399" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- backdrop -->
+  <rect width="220" height="220" rx="44" fill="#0a0b0f"/>
+
+  <!-- concentric radar rings -->
+  <circle cx="110" cy="110" r="86" stroke="#1f2937" stroke-width="1.5"/>
+  <circle cx="110" cy="110" r="64" stroke="#1f2937" stroke-width="1.5"/>
+  <circle cx="110" cy="110" r="42" stroke="#243244" stroke-width="1.5"/>
+
+  <!-- radar sweep wedge -->
+  <path d="M110 110 L196 110 A86 86 0 0 0 170 49 Z" fill="url(#sweep)"/>
+
+  <!-- eye almond outline -->
+  <path d="M24 110 Q110 34 196 110 Q110 186 24 110 Z" stroke="#34d399" stroke-width="3.5" fill="none" opacity="0.85"/>
+
+  <!-- iris -->
+  <circle cx="110" cy="110" r="40" fill="url(#irisGrad)"/>
+  <circle cx="110" cy="110" r="40" stroke="#34d399" stroke-width="2" opacity="0.6"/>
+
+  <!-- satellite device nodes + links (the "network" pupil) -->
+  <line x1="110" y1="110" x2="150" y2="78" stroke="#7dd3fc" stroke-width="1.5" opacity="0.7"/>
+  <line x1="110" y1="110" x2="70" y2="86" stroke="#7dd3fc" stroke-width="1.5" opacity="0.7"/>
+  <line x1="110" y1="110" x2="132" y2="146" stroke="#7dd3fc" stroke-width="1.5" opacity="0.7"/>
+  <line x1="110" y1="110" x2="82" y2="142" stroke="#7dd3fc" stroke-width="1.5" opacity="0.7"/>
+  <circle cx="150" cy="78" r="5" fill="#7dd3fc"/>
+  <circle cx="70" cy="86" r="5" fill="#7dd3fc"/>
+  <circle cx="132" cy="146" r="5" fill="#7dd3fc"/>
+  <circle cx="82" cy="142" r="5" fill="#7dd3fc"/>
+
+  <!-- pupil hub -->
+  <circle cx="110" cy="110" r="14" fill="#0a0b0f" stroke="#34d399" stroke-width="2.5"/>
+  <circle cx="110" cy="110" r="5" fill="#34d399"/>
+</svg>
