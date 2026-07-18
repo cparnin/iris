@@ -17,8 +17,19 @@ export interface ScanSummary {
 export const scanBus = new EventEmitter();
 
 let scanning = false;
+let paused = false;
 let lastSummary: ScanSummary | null = null;
 let scanCount = 0;
+
+export function isPaused(): boolean {
+  return paused;
+}
+
+/** Pause/resume the auto-scan loop. Pure: flips the flag and announces it. */
+export function setPaused(value: boolean): void {
+  paused = value;
+  scanBus.emit("scan:paused", { paused });
+}
 
 // Every Nth scan, re-resolve *every* device's name from the network instead of
 // trusting the cache — so renamed devices and names that were unresolvable the
@@ -112,7 +123,7 @@ export function startAutoScan(intervalMs: number): void {
   if (timer) clearInterval(timer);
   void runScan().catch((e) => console.error("[scan] initial scan failed:", e.message));
   timer = setInterval(() => {
-    if (!scanning) {
+    if (!scanning && !paused) {
       void runScan().catch((e) => console.error("[scan] periodic scan failed:", e.message));
     }
   }, intervalMs);

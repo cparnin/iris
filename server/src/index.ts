@@ -1,4 +1,5 @@
 import express from "express";
+import { spawn } from "node:child_process";
 import { isLoopbackHost } from "./security.js";
 import { listDevices, recentEvents, setLabel, setTrusted, getDeviceById } from "./db.js";
 import { portScan } from "./net/portscan.js";
@@ -6,6 +7,8 @@ import {
   runScan,
   startAutoScan,
   isScanning,
+  isPaused,
+  setPaused,
   getLastSummary,
   scanBus,
   type ScanSummary,
@@ -43,9 +46,45 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     scanning: isScanning(),
+    paused: isPaused(),
     lastScan: getLastSummary(),
     ntfy: ntfyStatus(),
   });
+});
+
+// Pause / resume the auto-scan loop. Pausing stops all scanning (and its CPU +
+// network use) while leaving the dashboard live; resuming kicks off a scan now.
+app.post("/api/pause", (_req, res) => {
+  setPaused(true);
+  res.json({ ok: true, paused: true });
+});
+app.post("/api/resume", (_req, res) => {
+  setPaused(false);
+  if (!isScanning()) void runScan().catch((e) => console.error("[scan] resume scan failed:", e.message));
+  res.json({ ok: true, paused: false });
+});
+
+// Full off switch: stop Iris entirely. If we're running as the macOS
+// LaunchAgent, boot the whole job out so KeepAlive doesn't respawn it (it will
+// come back at next login); otherwise just exit the process. Runs detached so
+// it completes even as this process is torn down.
+app.post("/api/quit", (_req, res) => {
+  res.json({ ok: true, stopping: true });
+  setTimeout(() => {
+    const uid = process.getuid?.() ?? 0;
+    const label = process.env.IRIS_LAUNCHD_LABEL ?? "com.iris.dashboard";
+    try {
+      const child = spawn("launchctl", ["bootout", `gui/${uid}/${label}`], {
+        detached: true,
+        stdio: "ignore",
+      });
+      child.on("error", () => process.exit(0));
+    } catch {
+      process.exit(0);
+    }
+    // Fallback if bootout didn't apply (e.g. not launched by launchd).
+    setTimeout(() => process.exit(0), 1500);
+  }, 200);
 });
 
 app.post("/api/notify/test", async (_req, res) => {
@@ -62,7 +101,12 @@ app.post("/api/notify/test", async (_req, res) => {
 });
 
 app.get("/api/devices", (_req, res) => {
-  res.json({ devices: listDevices(), lastScan: getLastSummary(), scanning: isScanning() });
+  res.json({
+    devices: listDevices(),
+    lastScan: getLastSummary(),
+    scanning: isScanning(),
+    paused: isPaused(),
+  });
 });
 
 app.get("/api/events", (req, res) => {
@@ -121,14 +165,16 @@ app.get("/api/stream", (req, res) => {
     res.write(`event: ${event}\n`);
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
-  send("hello", { scanning: isScanning(), lastScan: getLastSummary() });
+  send("hello", { scanning: isScanning(), paused: isPaused(), lastScan: getLastSummary() });
 
   const onStart = (d: unknown) => send("scan:start", d);
   const onDone = (d: ScanSummary) => send("scan:done", d);
   const onError = (e: Error) => send("scan:error", { message: e.message });
+  const onPaused = (d: unknown) => send("scan:paused", d);
   scanBus.on("scan:start", onStart);
   scanBus.on("scan:done", onDone);
   scanBus.on("scan:error", onError);
+  scanBus.on("scan:paused", onPaused);
 
   const keepAlive = setInterval(() => res.write(": ping\n\n"), 20_000);
 
@@ -137,6 +183,7 @@ app.get("/api/stream", (req, res) => {
     scanBus.off("scan:start", onStart);
     scanBus.off("scan:done", onDone);
     scanBus.off("scan:error", onError);
+    scanBus.off("scan:paused", onPaused);
   });
 });
 

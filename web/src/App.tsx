@@ -17,12 +17,16 @@ export default function App() {
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const [ntfy, setNtfy] = useState<NtfyStatus | null>(null);
   const [testMsg, setTestMsg] = useState<string>("");
+  const [paused, setPaused] = useState(false);
+  const [stopped, setStopped] = useState(false);
+  const [confirmQuit, setConfirmQuit] = useState(false);
 
   const refresh = useCallback(async () => {
     const [d, e] = await Promise.all([api.devices(), api.events(80)]);
     setDevices(d.devices);
     setLastScan(d.lastScan);
     setScanning(d.scanning);
+    setPaused(d.paused);
     setEvents(e.events);
   }, []);
 
@@ -52,6 +56,9 @@ export default function App() {
       void refresh();
     });
     es.addEventListener("scan:error", () => setScanning(false));
+    es.addEventListener("scan:paused", (ev) => {
+      setPaused((JSON.parse((ev as MessageEvent).data) as { paused: boolean }).paused);
+    });
     return () => es.close();
   }, [refresh]);
 
@@ -62,6 +69,21 @@ export default function App() {
     } catch {
       setScanning(false);
     }
+  };
+
+  const togglePause = async () => {
+    const next = !paused;
+    setPaused(next); // optimistic
+    try {
+      await (next ? api.pause() : api.resume());
+    } catch {
+      setPaused(!next); // revert on failure
+    }
+  };
+
+  const quit = async () => {
+    await api.quit().catch(() => {});
+    setStopped(true);
   };
 
   const rename = async (id: string, label: string) => {
@@ -102,6 +124,23 @@ export default function App() {
     ["new", "New"],
   ];
 
+  if (stopped) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
+        <img src="/logo.svg" alt="Iris" className="h-14 w-14 opacity-60" />
+        <h1 className="text-2xl font-bold text-white">Iris is stopped</h1>
+        <p className="max-w-md text-sm text-zinc-400">
+          The scanner and dashboard have shut down and won't restart on their own until
+          your next login. To bring Iris back now, run this in your terminal:
+        </p>
+        <code className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-emerald-300">
+          launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.iris.dashboard.plist
+        </code>
+        <p className="text-xs text-zinc-600">Then reload this page.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
       {/* Header */}
@@ -120,6 +159,7 @@ export default function App() {
               ) : (
                 "Discovering your network…"
               )}
+              {paused && <span className="font-medium text-amber-400"> · paused</span>}
             </p>
           </div>
         </div>
@@ -151,6 +191,29 @@ export default function App() {
             ) : (
               <>⟳ Scan now</>
             )}
+          </button>
+          <button
+            onClick={togglePause}
+            title={paused ? "Auto-scanning is paused — click to resume" : "Pause auto-scanning"}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+              paused
+                ? "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30"
+                : "bg-white/5 text-zinc-300 hover:bg-white/10"
+            }`}
+          >
+            {paused ? "▶ Resume" : "⏸ Pause"}
+          </button>
+          <button
+            onClick={confirmQuit ? quit : () => setConfirmQuit(true)}
+            onMouseLeave={() => setConfirmQuit(false)}
+            title="Stop Iris entirely (server + dashboard)"
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+              confirmQuit
+                ? "bg-red-500 text-white hover:bg-red-400"
+                : "bg-white/5 text-zinc-400 hover:bg-red-500/20 hover:text-red-300"
+            }`}
+          >
+            {confirmQuit ? "Confirm quit?" : "⏻ Quit"}
           </button>
         </div>
       </header>

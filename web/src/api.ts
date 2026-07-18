@@ -64,15 +64,18 @@ export interface PortScanResult {
 export const api = {
   devices: () =>
     fetch("/api/devices").then(
-      json<{ devices: Device[]; lastScan: ScanSummary | null; scanning: boolean }>
+      json<{ devices: Device[]; lastScan: ScanSummary | null; scanning: boolean; paused: boolean }>
     ),
   events: (limit = 100) =>
     fetch(`/api/events?limit=${limit}`).then(json<{ events: NetEvent[] }>),
   health: () =>
-    fetch("/api/health").then(json<{ ok: boolean; ntfy: NtfyStatus }>),
+    fetch("/api/health").then(json<{ ok: boolean; paused: boolean; ntfy: NtfyStatus }>),
   notifyTest: () =>
     fetch("/api/notify/test", { method: "POST" }).then((r) => r.ok),
   scan: () => fetch("/api/scan", { method: "POST" }).then(json<{ ok: boolean }>),
+  pause: () => fetch("/api/pause", { method: "POST" }).then(json<{ ok: boolean; paused: boolean }>),
+  resume: () => fetch("/api/resume", { method: "POST" }).then(json<{ ok: boolean; paused: boolean }>),
+  quit: () => fetch("/api/quit", { method: "POST" }).then((r) => r.ok),
   update: (id: string, patch: { label?: string; trusted?: boolean }) =>
     fetch(`/api/devices/${encodeURIComponent(id)}`, {
       method: "PATCH",

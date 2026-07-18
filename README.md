@@ -34,6 +34,8 @@ shows up — no router login, no agents on your devices, runs entirely on your M
 - **New-device alerts** — **ntfy** push to your phone the instant an unknown device
   joins. Untrusted-online count is surfaced front-and-center.
 - **Naming & trust** — rename any device, mark devices trusted.
+- **Pause / off switch** — **⏸ Pause** halts scanning (and its CPU/network use)
+  while keeping the dashboard live; **⏻ Quit** stops Iris entirely from the header.
 - **Network map** — live hub-and-spoke diagram of the gateway and every online
   device, colored by trust status; click a node to filter the list to it.
 - **Live everything** — real-time (SSE) activity feed; auto-rescan on an interval.
