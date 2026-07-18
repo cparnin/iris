@@ -104,6 +104,12 @@ const SERVICE_TYPES = [
   "_amzn-wplay._tcp.local", // Amazon Fire TV / some Echo
   "_ipp._tcp.local", // network printers (IPP)
   "_printer._tcp.local", // network printers (LPD)
+  "_device-info._tcp.local", // Apple devices — model + often the set name
+  "_companion-link._tcp.local", // Apple Continuity — device name
+  "_workstation._tcp.local", // Avahi/Linux, some NAS — hostname
+  "_smb._tcp.local", // file shares (Macs, NAS)
+  "_ssh._tcp.local", // servers / NAS / Raspberry Pi
+  "_googlezone._tcp.local", // Google Home speaker groups
 ];
 
 /** Encode a set of DNS labels (no compression) into wire format. */

@@ -3,7 +3,8 @@ import { promisify } from "node:util";
 import dns from "node:dns/promises";
 import { detectNetwork, networkBase, type NetInfo } from "./subnet.js";
 import { normalizeMac, formatMac, lookupVendor, isRandomizedMac } from "./vendors.js";
-import { mdnsReverseBatch, mdnsServiceBatch } from "./mdns.js";
+import { mdnsReverseBatch, mdnsServiceBatch, type ServiceName } from "./mdns.js";
+import { netbiosBatch } from "./netbios.js";
 
 const pexec = promisify(execFile);
 
@@ -112,15 +113,34 @@ async function readArpTable(): Promise<Map<string, string>> {
 
 async function reverseDns(ip: string): Promise<string | null> {
   try {
-    const names = await dns.reverse(ip);
+    // dns.reverse has no built-in timeout and can hang on hosts with no PTR;
+    // cap it so a few slow lookups can't stretch out the whole scan.
+    const names = await Promise.race([
+      dns.reverse(ip),
+      new Promise<string[]>((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
+    ]);
     return names[0]?.replace(/\.$/, "") ?? null;
   } catch {
     return null;
   }
 }
 
-/** Full network scan: discover live hosts and enrich each with mac/vendor/hostname. */
-export async function scanNetwork(): Promise<ScanResult> {
+/** Stable device id for a host, matching how the DB keys devices (mac > ip). */
+function deviceIdFor(ip: string, mac: string | null): string {
+  return mac ? mac : `ip:${ip}`;
+}
+
+/**
+ * Full network scan: discover live hosts and enrich each with mac/vendor/hostname.
+ *
+ * `knownNames` maps device-id → previously-resolved hostname. Any host we've
+ * already named is skipped during enrichment, so a steady-state scan does zero
+ * mDNS/reverse-DNS work — only genuinely new or still-unnamed hosts pay that
+ * cost. This keeps repeated background scans cheap on CPU and network.
+ */
+export async function scanNetwork(
+  knownNames?: Map<string, string>
+): Promise<ScanResult> {
   const startedAt = Date.now();
   const net = await detectNetwork();
 
@@ -136,22 +156,43 @@ export async function scanNetwork(): Promise<ScanResult> {
   }
 
   const liveIps = [...ttls.keys()];
-  // Enrich names via mDNS (best-effort, batched, run in parallel):
-  //  - reverse PTR  -> a device's ".local" hostname
+  // Only hosts without a fresh cached name need enrichment. The scanner decides
+  // freshness (unknown hosts and periodic refreshes are absent from knownNames),
+  // so steady-state scans skip the network lookups entirely.
+  const needIps = liveIps.filter(
+    (ip) => !knownNames?.get(deviceIdFor(ip, arp.get(ip) ?? null))
+  );
+  // Enrich the hosts that need a name from several sources, in parallel:
   //  - service browse -> friendly names set on Chromecast/Nest, Apple TV,
-  //    HomeKit, Sonos, printers ("Living Room display", "Bedroom Apple TV").
-  const [mdnsNames, serviceNames] = await Promise.all([
-    mdnsReverseBatch(liveIps),
-    mdnsServiceBatch(),
-  ]);
+  //    HomeKit, Sonos, printers ("Living Room display", "Bedroom Apple TV")
+  //  - reverse PTR    -> a device's ".local" hostname
+  //  - NetBIOS        -> machine names for Windows / NAS / Samba hosts
+  // Reverse DNS is the final per-host fallback below. When nothing needs a name
+  // this whole block is skipped.
+  let mdnsNames = new Map<string, string>();
+  let serviceNames = new Map<string, ServiceName>();
+  let netbiosNames = new Map<string, string>();
+  if (needIps.length > 0) {
+    [mdnsNames, serviceNames, netbiosNames] = await Promise.all([
+      mdnsReverseBatch(needIps),
+      mdnsServiceBatch(),
+      netbiosBatch(needIps),
+    ]);
+  }
 
   const hosts: DiscoveredHost[] = await Promise.all(
     liveIps.map(async (ip): Promise<DiscoveredHost> => {
       const mac = arp.get(ip) ?? null;
       const macNorm = mac ? normalizeMac(mac) : null;
-      // Prefer a friendly service name, then the .local hostname, then rDNS.
+      // Reuse a fresh cached name if we have one; otherwise take the best
+      // available: friendly service name > .local hostname > NetBIOS > rDNS.
+      const cached = knownNames?.get(deviceIdFor(ip, mac));
       const hostname =
-        serviceNames.get(ip)?.name ?? mdnsNames.get(ip) ?? (await reverseDns(ip));
+        cached ??
+        serviceNames.get(ip)?.name ??
+        mdnsNames.get(ip) ??
+        netbiosNames.get(ip) ??
+        (await reverseDns(ip));
       return {
         ip,
         mac,

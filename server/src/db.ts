@@ -83,6 +83,24 @@ const recentEventsStmt = db.prepare<[number], EventRow>(
   "SELECT * FROM events ORDER BY ts DESC LIMIT ?"
 );
 
+/**
+ * Cap the activity log so the SQLite file can't grow without bound. The feed
+ * only ever shows the most recent events, so we keep a rolling window and drop
+ * the rest. Override with EVENT_RETENTION.
+ */
+const MAX_EVENTS = Number(process.env.EVENT_RETENTION ?? 5000);
+const pruneEventsStmt = db.prepare(
+  "DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY ts DESC LIMIT ?)"
+);
+
+/** Trim the events table to the newest `keep` rows. Returns rows deleted. */
+export function pruneEvents(keep = MAX_EVENTS): number {
+  const deleted = pruneEventsStmt.run(keep).changes;
+  // Fold the freed pages back into the main file so the WAL doesn't sit large.
+  if (deleted > 0) db.pragma("wal_checkpoint(TRUNCATE)");
+  return deleted;
+}
+
 export function listDevices(): DeviceRow[] {
   return listDevicesStmt.all();
 }

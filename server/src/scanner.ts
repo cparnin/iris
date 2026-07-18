@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { scanNetwork, type ScanResult } from "./net/discover.js";
-import { applyScan, listDevices, getDeviceById, type SeenDevice, type ScanDiff } from "./db.js";
+import { applyScan, listDevices, getDeviceById, pruneEvents, type SeenDevice, type ScanDiff } from "./db.js";
 import { notifyNewDevice, isNtfyConfigured } from "./notify.js";
 
 export interface ScanSummary {
@@ -18,6 +18,12 @@ export const scanBus = new EventEmitter();
 
 let scanning = false;
 let lastSummary: ScanSummary | null = null;
+let scanCount = 0;
+
+// Every Nth scan, re-resolve *every* device's name from the network instead of
+// trusting the cache — so renamed devices and names that were unresolvable the
+// first time get picked up. Unknown hosts are always re-resolved regardless.
+const NAME_REFRESH_EVERY = Math.max(1, Number(process.env.NAME_REFRESH_EVERY ?? 6));
 
 export function isScanning(): boolean {
   return scanning;
@@ -53,11 +59,25 @@ export async function runScan(): Promise<ScanSummary> {
   try {
     // If the DB is empty this is the very first scan — treat everything as a
     // baseline and don't fire a notification storm for pre-existing devices.
-    const isBaseline = listDevices().length === 0;
+    const priorDevices = listDevices();
+    const isBaseline = priorDevices.length === 0;
 
-    const result = await scanNetwork();
+    // Feed already-resolved names back in so most scans skip the mDNS/NetBIOS/DNS
+    // lookups for hosts we've already identified — background scans stay cheap.
+    // On a refresh scan we pass nothing, forcing a fresh resolve of everyone.
+    const refreshNames = scanCount % NAME_REFRESH_EVERY === 0;
+    scanCount++;
+    const knownNames = new Map<string, string>();
+    if (!refreshNames) {
+      for (const d of priorDevices) {
+        if (d.hostname) knownNames.set(d.id, d.hostname);
+      }
+    }
+
+    const result = await scanNetwork(knownNames);
     const now = result.finishedAt;
     const diff = applyScan(toSeen(result), now);
+    pruneEvents(); // keep the activity log (and the SQLite WAL) bounded
 
     if (!isBaseline && isNtfyConfigured() && diff.newDevices.length) {
       for (const id of diff.newDevices) {

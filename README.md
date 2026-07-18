@@ -21,8 +21,11 @@ shows up — no router login, no agents on your devices, runs entirely on your M
 
 - **Fast discovery** — parallel ICMP ping-sweep + ARP-cache read across your whole
   subnet. A /24 in ~2s, a /22 in ~8s. No `sudo`.
-- **Real device names** — reverse **mDNS** resolves friendly `.local` names (Macs,
-  iPhones, printers, Sonos, and more) that home routers never expose.
+- **Real device names** — resolves friendly names from four sources so fewer
+  devices show up generic: mDNS **service discovery** (Chromecast/Nest, Apple TV,
+  Sonos, HomeKit, printers), reverse **mDNS** `.local` names, **NetBIOS** machine
+  names (Windows / NAS / Samba), and reverse DNS. Re-checked periodically so
+  renamed or newly-woken devices get their name.
 - **Vendor identification** — bundled offline IEEE/Wireshark OUI database (~40k
   prefixes): Apple, Google, eero, TP-Link, Canon, Espressif, and thousands more.
 - **OS hint** — coarse OS family guess (Windows / Apple·Linux·Android / Router·IoT)
@@ -59,7 +62,8 @@ npm run dev           # backend on 127.0.0.1:4000, dashboard on :5173
 ```
 
 Open **http://localhost:5173**. The first scan runs automatically and repeats
-every 60s.
+every 5 minutes (tune with `SCAN_INTERVAL_MS`). Hit **Scan now** anytime for an
+on-demand refresh.
 
 ### Keep it running (auto-start on login)
 
@@ -95,7 +99,9 @@ in the header to fire a test push. New devices trigger a notification automatica
 | ------------------ | ------------- | ----------------------------------------- |
 | `HOST`             | `127.0.0.1`   | Bind address (keep loopback unless auth'd)|
 | `PORT`             | `4000`        | Backend HTTP port                         |
-| `SCAN_INTERVAL_MS` | `60000`       | Auto-scan interval                        |
+| `SCAN_INTERVAL_MS` | `300000`      | Auto-scan interval (5 min)                |
+| `NAME_REFRESH_EVERY`| `6`          | Full name re-resolve every Nth scan       |
+| `EVENT_RETENTION`  | `5000`        | Max activity-log rows kept (older pruned) |
 | `NTFY_URL`         | *(unset)*     | ntfy topic URL; unset = alerts off        |
 | `NTFY_TOKEN`       | *(unset)*     | ntfy bearer token (optional)              |
 | `NTFY_PRIORITY`    | `default`     | default ntfy priority                     |
@@ -105,10 +111,11 @@ in the header to fire a test push. New devices trigger a notification automatica
 ```
 server/  Node + TypeScript
   net/subnet.ts    detect active interface + CIDR from the default route
-  net/discover.ts  parallel ping-sweep, ARP read, TTL OS hint, enrichment
-  net/mdns.ts      hand-rolled reverse-mDNS resolver for .local names
+  net/discover.ts  parallel ping-sweep, ARP read, TTL OS hint, cached enrichment
+  net/mdns.ts      hand-rolled reverse-mDNS + service-discovery resolver
+  net/netbios.ts   NetBIOS node-status names (Windows / NAS / Samba)
   net/vendors.ts   MAC → vendor via bundled OUI DB
-  db.ts            SQLite: devices + events, transactional scan diffing
+  db.ts            SQLite: devices + events (auto-pruned), transactional scan diffing
   notify.ts        ntfy push notifications
   scanner.ts       scan orchestration + auto-scan loop + event bus
   index.ts         Express REST API + Server-Sent-Events stream (localhost)

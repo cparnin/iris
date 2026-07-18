@@ -16,7 +16,7 @@ const PORT = Number(process.env.PORT ?? 4000);
 // Bind to loopback by default: the API exposes your full device inventory, so
 // it must NOT be reachable from the LAN. Override HOST only if you know why.
 const HOST = process.env.HOST ?? "127.0.0.1";
-const SCAN_INTERVAL_MS = Number(process.env.SCAN_INTERVAL_MS ?? 60_000);
+const SCAN_INTERVAL_MS = Number(process.env.SCAN_INTERVAL_MS ?? 300_000);
 
 const app = express();
 app.use(cors());
