@@ -15,4 +15,6 @@ if [ ! -f server/dist/index.js ] || [ ! -f web/dist/index.html ]; then
   npm run build || exit 1
 fi
 
-exec npm start
+# exec Node directly (not `npm start`) so the running service is a SINGLE ~90MB
+# process — `npm start` would leave two extra npm wrapper shells resident.
+exec node server/dist/index.js
