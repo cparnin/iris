@@ -25,10 +25,13 @@ It auto-starts at login as a macOS LaunchAgent **`com.polaris.dashboard`**
 production build: **a single ~95MB Node process on http://127.0.0.1:4000**.
 
 - **Production is NOT hot-reload.** After changing code:
-  `npm run build && launchctl kickstart -k gui/$(id -u)/com.polaris.dashboard`
+  `npm run build && ./scripts/polarisctl restart`
+- Use **`./scripts/polarisctl {start|stop|restart|status|logs}`** rather than raw
+  `launchctl` — it wraps the `gui/$(id -u)/...` syntax.
 - Logs: `~/Library/Logs/polaris-dashboard.log` (+ `.err.log`)
-- Stop/start: `launchctl bootout|bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.polaris.dashboard.plist`
 - The UI also has **⏸ Pause** (stop scanning) and **⏻ Quit** (stop everything).
+- New devices are auto port-scanned on arrival (`AUTOSCAN_NEW_DEVICES=0` to
+  disable), and the finding is folded into the ntfy alert.
 
 ## Gotchas that have bitten before
 

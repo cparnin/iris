@@ -32,7 +32,9 @@ shows up — no router login, no agents on your devices, runs entirely on your M
   from reply TTL, so a stray Windows box stands out.
 - **Privacy-MAC detection** — flags devices using randomized MACs (modern phones).
 - **New-device alerts** — **ntfy** push to your phone the instant an unknown device
-  joins. Untrusted-online count is surfaced front-and-center.
+  joins. New arrivals are auto-fingerprinted, so the alert says what the device is
+  *exposing* ("New device (2 risky ports): sketchy-nas"), not just that it appeared.
+  Untrusted-online count is surfaced front-and-center.
 - **Naming & trust** — rename any device, mark devices trusted.
 - **Pause / off switch** — **⏸ Pause** halts scanning (and its CPU/network use)
   while keeping the dashboard live; **⏻ Quit** stops Polaris entirely from the header.
@@ -98,8 +100,18 @@ On macOS, install a LaunchAgent so Polaris starts at login and restarts if it
 crashes. It runs the lean production build (builds once if needed):
 
 ```bash
-./scripts/install-autostart.sh     # enable
-./scripts/uninstall-autostart.sh   # disable
+./scripts/install-autostart.sh     # install (once)
+./scripts/uninstall-autostart.sh   # remove entirely
+```
+
+Day to day, use the control script instead of raw `launchctl`:
+
+```bash
+./scripts/polarisctl status     # is it running?
+./scripts/polarisctl stop       # turn it off
+./scripts/polarisctl start      # turn it back on
+./scripts/polarisctl restart    # pick up changes after `npm run build`
+./scripts/polarisctl logs       # tail the log
 ```
 
 Logs go to `~/Library/Logs/polaris-dashboard.log`.
@@ -137,6 +149,8 @@ in the header to fire a test push. New devices trigger a notification automatica
 | `NTFY_PRIORITY`    | `default`     | default ntfy priority                     |
 | `ALLOWED_HOSTS`    | *(unset)*     | extra Host headers allowed (off-loopback) |
 | `ISP_NAME`         | `Internet / ISP` | label for the upstream node on the map |
+| `AUTOSCAN_NEW_DEVICES` | `1`       | port-scan new devices on arrival (`0` = off) |
+| `AUTOSCAN_MAX_PER_SCAN` | `3`      | cap auto-scans per scan cycle             |
 | `POLARIS_DATA_DIR`    | `./data`      | where the SQLite database lives           |
 
 ## Architecture

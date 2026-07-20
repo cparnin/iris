@@ -1,6 +1,15 @@
 import { EventEmitter } from "node:events";
 import { scanNetwork, type ScanResult } from "./net/discover.js";
-import { applyScan, listDevices, getDeviceById, pruneEvents, type SeenDevice, type ScanDiff } from "./db.js";
+import {
+  applyScan,
+  listDevices,
+  getDeviceById,
+  pruneEvents,
+  savePortScan,
+  type SeenDevice,
+  type ScanDiff,
+} from "./db.js";
+import { portScan, type PortScanResult } from "./net/portscan.js";
 import { notifyNewDevice, isNtfyConfigured } from "./notify.js";
 
 export interface ScanSummary {
@@ -15,6 +24,43 @@ export interface ScanSummary {
 
 /** Emits: "scan:start", "scan:done" (ScanSummary), "scan:error" (Error). */
 export const scanBus = new EventEmitter();
+
+// Auto-fingerprint devices the moment they appear. Off via
+// AUTOSCAN_NEW_DEVICES=0; capped so a burst of arrivals can't queue a long
+// train of nmap runs.
+const AUTOSCAN_NEW = process.env.AUTOSCAN_NEW_DEVICES !== "0";
+const AUTOSCAN_MAX = Math.max(0, Number(process.env.AUTOSCAN_MAX_PER_SCAN ?? 3) || 0);
+
+/**
+ * For each newly-seen device: port-scan it (up to AUTOSCAN_MAX per scan),
+ * persist the result so the map badges it immediately, then push an alert that
+ * says what the device is exposing. Best-effort — never throws into the caller.
+ */
+async function handleNewDevices(ids: string[]): Promise<void> {
+  for (const [i, id] of ids.entries()) {
+    const dev = getDeviceById(id);
+    if (!dev) continue;
+
+    let scan: PortScanResult | null = null;
+    if (AUTOSCAN_NEW && dev.ip && i < AUTOSCAN_MAX) {
+      try {
+        scan = await portScan(dev.ip);
+        if (scan.scanned) {
+          savePortScan(dev.id, scan.ports, scan.risks.length, scan.scannedAt);
+        }
+      } catch (err) {
+        console.error(`[autoscan] ${dev.ip} failed:`, (err as Error).message);
+        scan = null;
+      }
+    }
+
+    if (isNtfyConfigured()) {
+      await notifyNewDevice(dev, scan).catch((e: Error) =>
+        console.error("[notify] new-device push failed:", e.message)
+      );
+    }
+  }
+}
 
 let scanning = false;
 let paused = false;
@@ -90,11 +136,12 @@ export async function runScan(): Promise<ScanSummary> {
     const diff = applyScan(toSeen(result), now);
     pruneEvents(); // keep the activity log (and the SQLite WAL) bounded
 
-    if (!isBaseline && isNtfyConfigured() && diff.newDevices.length) {
-      for (const id of diff.newDevices) {
-        const dev = getDeviceById(id);
-        if (dev) void notifyNewDevice(dev);
-      }
+    // A device joining is exactly when you want to know what it exposes, so
+    // fingerprint new arrivals and fold the findings into the alert. Runs
+    // detached: nmap takes tens of seconds and must not stall the scan loop.
+    // Skipped on the baseline scan, where every device is "new".
+    if (!isBaseline && diff.newDevices.length) {
+      void handleNewDevices(diff.newDevices);
     }
     const summary: ScanSummary = {
       startedAt: result.startedAt,

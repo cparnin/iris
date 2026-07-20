@@ -1,5 +1,6 @@
 import type { DeviceRow } from "./db.js";
 import { displayNameOf } from "./db.js";
+import type { PortScanResult } from "./net/portscan.js";
 
 /**
  * ntfy push notifications. Configure via environment:
@@ -84,8 +85,23 @@ export async function sendNtfy(msg: NtfyMessage): Promise<boolean> {
   }
 }
 
-/** Notification for a newly-discovered device joining the network. */
-export async function notifyNewDevice(dev: DeviceRow): Promise<void> {
+/**
+ * Notification for a newly-discovered device joining the network. When a
+ * fingerprint scan is supplied, the alert says what the device is actually
+ * exposing — the useful part for deciding whether to care.
+ */
+export async function notifyNewDevice(
+  dev: DeviceRow,
+  scan?: PortScanResult | null
+): Promise<void> {
+  await sendNtfy(buildNewDeviceAlert(dev, scan));
+}
+
+/** Compose the new-device alert. Split out from sending so it can be tested. */
+export function buildNewDeviceAlert(
+  dev: DeviceRow,
+  scan?: PortScanResult | null
+): NtfyMessage {
   const name = displayNameOf(dev);
   const lines = [
     `IP: ${dev.ip ?? "?"}`,
@@ -95,10 +111,26 @@ export async function notifyNewDevice(dev: DeviceRow): Promise<void> {
   if (dev.os_guess) lines.push(`OS: ${dev.os_guess}`);
   if (dev.randomized) lines.push("⚠️ randomized (privacy) MAC");
 
-  await sendNtfy({
-    title: `New device on your network: ${name}`,
+  const risky = scan?.scanned ? scan.risks.length : 0;
+  if (scan?.scanned) {
+    lines.push("");
+    lines.push(
+      scan.ports.length
+        ? `Open ports: ${scan.ports.map((p) => p.port).join(", ")}`
+        : "No open ports found"
+    );
+    for (const risk of scan.risks) lines.push(`⚠️ ${risk}`);
+  }
+
+  // Lead with the exposure count when there is one — that's the headline.
+  const title = risky
+    ? `New device (${risky} risky port${risky > 1 ? "s" : ""}): ${name}`
+    : `New device on your network: ${name}`;
+
+  return {
+    title,
     message: lines.join("\n"),
-    tags: dev.randomized ? ["warning", "detective"] : ["satellite", "eye"],
-    priority: "high",
-  });
+    tags: risky ? ["rotating_light", "warning"] : dev.randomized ? ["warning", "detective"] : ["satellite", "eye"],
+    priority: risky ? "urgent" : "high",
+  };
 }
