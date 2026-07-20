@@ -36,16 +36,35 @@ export interface NtfyMessage {
   click?: string; // URL opened when the notification is tapped
 }
 
+/**
+ * Make a value safe to put in an HTTP header.
+ *
+ * Headers are ByteStrings (Latin-1) — an emoji throws "Cannot convert argument
+ * to a ByteString", which silently killed every notification whose title held
+ * one. Device names come off the network, so we also drop control characters
+ * (CR/LF) to prevent header injection. Emoji still reach the phone via `tags`
+ * (ntfy shortcodes) and the message body, which are UTF-8 safe.
+ */
+export function headerSafe(value: string): string {
+  return [...value]
+    .filter((ch) => {
+      const c = ch.codePointAt(0) ?? 0;
+      return c >= 0x20 && c <= 0xff && c !== 0x7f;
+    })
+    .join("")
+    .trim();
+}
+
 /** Low-level send. Returns true on success; never throws (logs and returns false). */
 export async function sendNtfy(msg: NtfyMessage): Promise<boolean> {
   if (!NTFY_URL) return false;
   try {
     const headers: Record<string, string> = {
-      Title: msg.title,
-      Priority: msg.priority ?? NTFY_PRIORITY ?? "default",
+      Title: headerSafe(msg.title),
+      Priority: headerSafe(msg.priority ?? NTFY_PRIORITY ?? "default"),
     };
-    if (msg.tags?.length) headers.Tags = msg.tags.join(",");
-    if (msg.click) headers.Click = msg.click;
+    if (msg.tags?.length) headers.Tags = headerSafe(msg.tags.join(","));
+    if (msg.click) headers.Click = headerSafe(msg.click);
     if (NTFY_TOKEN) headers.Authorization = `Bearer ${NTFY_TOKEN}`;
 
     const res = await fetch(NTFY_URL, {

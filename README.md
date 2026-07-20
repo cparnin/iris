@@ -110,11 +110,14 @@ Point Polaris at any [ntfy](https://ntfy.sh) topic (public or self-hosted). Use 
 **long, unguessable topic name** — anyone who knows a public topic can read it.
 
 ```bash
-# .env (see .env.example)
+# .env (see .env.example) — loaded automatically at startup
 NTFY_URL=https://ntfy.sh/polaris-home-8fk39dk2mx7
 # NTFY_TOKEN=tk_...        # optional, for protected/self-hosted servers
 # NTFY_PRIORITY=high       # optional default priority
 ```
+
+`.env` in the repo root is read on startup for both dev and production; real
+environment variables take precedence over it.
 
 Subscribe to that topic in the ntfy app on your phone, then click **“alerts on”**
 in the header to fire a test push. New devices trigger a notification automatically
@@ -133,6 +136,7 @@ in the header to fire a test push. New devices trigger a notification automatica
 | `NTFY_TOKEN`       | *(unset)*     | ntfy bearer token (optional)              |
 | `NTFY_PRIORITY`    | `default`     | default ntfy priority                     |
 | `ALLOWED_HOSTS`    | *(unset)*     | extra Host headers allowed (off-loopback) |
+| `ISP_NAME`         | `Internet / ISP` | label for the upstream node on the map |
 | `POLARIS_DATA_DIR`    | `./data`      | where the SQLite database lives           |
 
 ## Architecture

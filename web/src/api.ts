@@ -73,7 +73,9 @@ export const api = {
   events: (limit = 100) =>
     fetch(`/api/events?limit=${limit}`).then(json<{ events: NetEvent[] }>),
   health: () =>
-    fetch("/api/health").then(json<{ ok: boolean; paused: boolean; ntfy: NtfyStatus }>),
+    fetch("/api/health").then(
+      json<{ ok: boolean; paused: boolean; ntfy: NtfyStatus; ispName: string }>
+    ),
   notifyTest: () =>
     fetch("/api/notify/test", { method: "POST" }).then((r) => r.ok),
   scan: () => fetch("/api/scan", { method: "POST" }).then(json<{ ok: boolean }>),

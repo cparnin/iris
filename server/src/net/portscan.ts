@@ -43,19 +43,62 @@ export async function nmapAvailable(): Promise<boolean> {
   }
 }
 
-/** Flag genuinely risky exposures. Returns a human note, or null if benign. */
-function riskFor(port: number, service: string | null): string | null {
+/**
+ * Data stores that have no business listening on a home LAN — most ship with
+ * no authentication by default, so an open port is effectively open data.
+ */
+const DATA_STORES: Record<number, string> = {
+  1433: "MSSQL",
+  3306: "MySQL",
+  5432: "PostgreSQL",
+  6379: "Redis",
+  9200: "Elasticsearch",
+  11211: "Memcached",
+  27017: "MongoDB",
+};
+
+/**
+ * Flag genuinely risky exposures. Returns a human note, or null if benign.
+ * Deliberately conservative: ports that are normal for consumer gear (HTTP,
+ * IPP, Chromecast's 8008/8009/8443) are NOT flagged, so a badge means something.
+ */
+export function riskFor(port: number, service: string | null): string | null {
   const s = (service ?? "").toLowerCase();
+
+  // --- remote access ---
   if (port === 23 || port === 2323 || s.includes("telnet"))
     return "Telnet — unencrypted remote login, should not be open";
-  if (port === 21 || s === "ftp") return "FTP — often unencrypted or anonymous";
-  if (port === 445 || port === 139 || s.includes("smb") || s.includes("microsoft-ds") || s.includes("netbios"))
-    return "SMB/Windows file sharing exposed";
   if (port === 3389 || s.includes("ms-wbt") || s.includes("rdp")) return "Remote Desktop (RDP) exposed";
   if (port === 5900 || s.includes("vnc")) return "VNC remote desktop exposed";
-  if (port === 1900 || s.includes("upnp")) return "UPnP exposed — a common IoT attack surface";
   if (port === 5555 || s.includes("adb")) return "Android Debug Bridge (adb) exposed";
+  if (port === 2375 || port === 2376 || s.includes("docker"))
+    return "Docker API exposed — commonly unauthenticated root access";
+
+  // --- file sharing / transfer ---
+  if (port === 445 || port === 139 || s.includes("smb") || s.includes("microsoft-ds") || s.includes("netbios"))
+    return "SMB/Windows file sharing exposed";
+  if (port === 21 || s === "ftp") return "FTP — often unencrypted or anonymous";
+  if (port === 69 || s === "tftp") return "TFTP — unauthenticated file transfer";
+  if (port === 873 || s.includes("rsync")) return "rsync daemon exposed";
+  if (port === 2049 || port === 111 || s.includes("nfs") || s.includes("rpcbind"))
+    return "NFS/rpcbind exposed — network file shares";
+
+  // --- printing (unauthenticated by design) ---
+  if (port === 9100 || s.includes("jetdirect"))
+    return "Raw printing (JetDirect) — unauthenticated printing and job access";
+  if (port === 515 || s === "printer") return "LPD printing — legacy and unauthenticated";
+
+  // --- IoT / management ---
+  if (port === 1900 || s.includes("upnp")) return "UPnP exposed — a common IoT attack surface";
+  if (port === 161 || port === 162 || s.includes("snmp"))
+    return "SNMP exposed — frequently left on default community strings";
+  if (port === 1883 || port === 8883 || s.includes("mqtt"))
+    return "MQTT broker exposed — IoT control messages";
   if (port === 37777 || port === 554 || s.includes("rtsp")) return "Camera/RTSP stream exposed";
+
+  // --- data stores ---
+  if (DATA_STORES[port]) return `${DATA_STORES[port]} database exposed on the LAN`;
+
   return null;
 }
 

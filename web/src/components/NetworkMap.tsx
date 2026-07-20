@@ -72,9 +72,11 @@ function clamp(v: number, lo: number, hi: number): number {
 export function NetworkMap({
   devices,
   onInspect,
+  ispName = "Internet / ISP",
 }: {
   devices: Device[];
   onInspect?: (d: Device) => void;
+  ispName?: string;
 }) {
   const [open, setOpen] = useState(true);
   const [hover, setHover] = useState<string | null>(null);
@@ -243,7 +245,7 @@ export function NetworkMap({
                 ))}
 
                 {/* Internet / ISP */}
-                <TierNode x={CX} y={INTERNET_Y} icon="🌐" label="Internet / ISP" ring="#64748b" r={26} />
+                <TierNode x={CX} y={INTERNET_Y} icon="🌐" label={ispName} ring="#64748b" r={26} />
 
                 {/* Gateway */}
                 {hub && (

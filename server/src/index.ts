@@ -1,3 +1,4 @@
+import "./env.js"; // MUST be first — loads .env before any module reads process.env
 import express from "express";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -30,7 +31,18 @@ const PORT = Number(process.env.PORT ?? 4000);
 // Bind to loopback by default: the API exposes your full device inventory, so
 // it must NOT be reachable from the LAN. Override HOST only if you know why.
 const HOST = process.env.HOST ?? "127.0.0.1";
-const SCAN_INTERVAL_MS = Number(process.env.SCAN_INTERVAL_MS ?? 300_000);
+// Guard the interval: a malformed value (e.g. a mangled .env line) would yield
+// NaN, and setInterval(NaN) coerces to 0 — scanning back-to-back forever. Fall
+// back to the default and never allow a punishing sub-10s cadence.
+const DEFAULT_SCAN_INTERVAL_MS = 300_000;
+const rawInterval = Number(process.env.SCAN_INTERVAL_MS);
+const SCAN_INTERVAL_MS =
+  Number.isFinite(rawInterval) && rawInterval >= 10_000 ? rawInterval : DEFAULT_SCAN_INTERVAL_MS;
+if (process.env.SCAN_INTERVAL_MS !== undefined && SCAN_INTERVAL_MS !== rawInterval) {
+  console.warn(
+    `[config] ignoring invalid SCAN_INTERVAL_MS=${JSON.stringify(process.env.SCAN_INTERVAL_MS)}; using ${SCAN_INTERVAL_MS}ms`
+  );
+}
 
 const app = express();
 
@@ -53,6 +65,9 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
+// Label for the upstream tier on the map — set ISP_NAME=Frontier to name yours.
+const ISP_NAME = process.env.ISP_NAME?.trim() || "Internet / ISP";
+
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
@@ -60,6 +75,7 @@ app.get("/api/health", (_req, res) => {
     paused: isPaused(),
     lastScan: getLastSummary(),
     ntfy: ntfyStatus(),
+    ispName: ISP_NAME,
   });
 });
 

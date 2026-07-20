@@ -17,6 +17,7 @@ export default function App() {
   const [filter, setFilter] = useState<Filter>("all");
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const [ntfy, setNtfy] = useState<NtfyStatus | null>(null);
+  const [ispName, setIspName] = useState("Internet / ISP");
   const [testMsg, setTestMsg] = useState<string>("");
   const [paused, setPaused] = useState(false);
   const [inspectId, setInspectId] = useState<string | null>(null);
@@ -34,7 +35,13 @@ export default function App() {
 
   useEffect(() => {
     void refresh();
-    void api.health().then((h) => setNtfy(h.ntfy)).catch(() => setNtfy(null));
+    void api
+      .health()
+      .then((h) => {
+        setNtfy(h.ntfy);
+        if (h.ispName) setIspName(h.ispName);
+      })
+      .catch(() => setNtfy(null));
   }, [refresh]);
 
   const testNotify = async () => {
@@ -222,7 +229,7 @@ export default function App() {
 
       <StatBar devices={devices} />
 
-      <NetworkMap devices={devices} onInspect={(d) => setInspectId(d.id)} />
+      <NetworkMap devices={devices} onInspect={(d) => setInspectId(d.id)} ispName={ispName} />
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
         {/* Devices */}
