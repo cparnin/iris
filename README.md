@@ -151,7 +151,9 @@ in the header to fire a test push. New devices trigger a notification automatica
 | `ISP_NAME`         | `Internet / ISP` | label for the upstream node on the map |
 | `AUTOSCAN_NEW_DEVICES` | `1`       | port-scan new devices on arrival (`0` = off) |
 | `AUTOSCAN_MAX_PER_SCAN` | `3`      | cap auto-scans per scan cycle             |
-| `POLARIS_DATA_DIR`    | `./data`      | where the SQLite database lives           |
+| `POLARIS_DATA_DIR` | `./data`      | where the SQLite database lives           |
+| `POLARIS_ENV_FILE` | `./.env`      | override which env file is loaded          |
+| `POLARIS_LAUNCHD_LABEL` | `com.polaris.dashboard` | LaunchAgent label used by ⏻ Quit |
 
 ## Architecture
 
@@ -162,13 +164,19 @@ server/  Node + TypeScript
   net/mdns.ts      hand-rolled reverse-mDNS + service-discovery resolver
   net/netbios.ts   NetBIOS node-status names (Windows / NAS / Samba)
   net/vendors.ts   MAC → vendor via bundled OUI DB
+  net/portscan.ts  opt-in nmap -sV service scan + risky-exposure rules
   db.ts            SQLite (polaris.sqlite): devices + events (auto-pruned), scan diffing
-  notify.ts        ntfy push notifications
+  notify.ts        ntfy push notifications (new-device alerts with findings)
   security.ts      loopback Host-header guard (DNS-rebinding defense)
+  env.ts           loads .env before anything reads process.env
   scanner.ts       scan orchestration + auto-scan loop + event bus
   index.ts         Express REST API + Server-Sent-Events stream (localhost)
   *.test.ts        unit tests (node:test) for parsing + network + security logic
-web/     Vite + React 19 + Tailwind v4 dashboard (NetworkMap, DeviceCard, …)
+web/     Vite + React 19 + Tailwind v4 dashboard
+  components/NetworkMap.tsx        tiered topology, zoom/pan, exposure badges
+  components/DeviceDetailPanel.tsx click-to-inspect drawer + port scan
+  components/DeviceCard.tsx        device grid card (rename, trust, scan)
+scripts/ polarisctl (start/stop/restart/status/logs) + autostart install
 ```
 
 ### API (localhost only)
@@ -181,8 +189,10 @@ web/     Vite + React 19 + Tailwind v4 dashboard (NetworkMap, DeviceCard, …)
 | POST   | `/api/scan`          | trigger a scan now               |
 | POST   | `/api/notify/test`   | send a test ntfy push            |
 | PATCH  | `/api/devices/:id`   | set `label` / `trusted`          |
+| DELETE | `/api/devices/:id`   | forget a device and its history  |
 | POST   | `/api/devices/:id/portscan` | nmap service scan of one device |
 | POST   | `/api/pause` · `/api/resume` | pause / resume auto-scanning |
+| POST   | `/api/quit`          | stop Polaris entirely (⏻ Quit)   |
 | GET    | `/api/stream`        | SSE: scan lifecycle events       |
 
 ## Tests

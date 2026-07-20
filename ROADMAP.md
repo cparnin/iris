@@ -17,7 +17,11 @@ Turn passive visibility into active awareness. All achievable from the Mac, no
 router access needed.
 
 - ✅ **New-device notifications** — ntfy push when a device joins (baseline scan
-  suppressed). Discord/webhook targets can be added the same way.
+  suppressed). New arrivals are auto port-scanned, so the alert reports what the
+  device is exposing and escalates priority when it's risky. Discord/webhook
+  targets can be added the same way.
+- ✅ **Network map** — tiered topology (ISP → gateway → Trusted/Untrusted zones)
+  with zoom/pan, collapsible zones, click-to-inspect, and per-node exposure badges.
 - ✅ **Real device names (reverse mDNS)** — friendly `.local` hostnames for devices
   that answer; router/printer/Mac/iPhone names without any router login.
 - ✅ **Coarse OS hint** — Windows / Apple·Linux·Android / Router·IoT from reply TTL.
