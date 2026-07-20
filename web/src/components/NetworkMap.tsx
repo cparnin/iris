@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Device } from "../api.js";
 import { displayName } from "../api.js";
 import { deviceIcon } from "../deviceMeta.js";
 
-/** Status → ring color + legend label. Also encoded by position + icon, so the
- *  map never relies on color alone. */
+/** Trust status → ring color + legend label. Also encoded by tier/group/icon,
+ *  so the map never relies on color alone. */
 const STATUS = {
   gateway: { ring: "#38bdf8", label: "Gateway" },
   self: { ring: "#a78bfa", label: "This Mac" },
@@ -20,39 +20,53 @@ function statusOf(d: Device): Status {
   return d.trusted === 1 ? "trusted" : "untrusted";
 }
 
-interface Placed {
-  d: Device;
+/** Which cluster a device belongs to. Your own Mac counts as trusted. */
+function groupKeyOf(d: Device): "trusted" | "untrusted" {
+  return d.is_self || d.trusted === 1 ? "trusted" : "untrusted";
+}
+
+const W = 900;
+const H = 640;
+const CX = W / 2;
+
+const INTERNET_Y = 48;
+const GATEWAY_Y = 158;
+const GROUPS_TOP = 250;
+
+// Device cell + group box geometry.
+const CELL_W = 92;
+const CELL_H = 86;
+const MAX_COLS = 4;
+const HEADER_H = 38;
+const BOX_PAD = 12;
+const GROUP_GAP = 40;
+
+interface GroupLayout {
+  key: "trusted" | "untrusted";
+  label: string;
+  color: string;
+  devices: Device[];
+  collapsed: boolean;
   x: number;
   y: number;
-  status: Status;
+  w: number;
+  h: number;
+  cols: number;
 }
 
-const W = 820;
-const H = 520;
-const CX = W / 2;
-const CY = H / 2;
-
-function ring(list: Device[], radius: number, offset = 0): Placed[] {
-  const n = list.length || 1;
-  return list.map((d, i) => {
-    const angle = -Math.PI / 2 + offset + (2 * Math.PI * i) / n;
-    return {
-      d,
-      x: CX + radius * Math.cos(angle),
-      y: CY + radius * Math.sin(angle),
-      status: statusOf(d),
-    };
-  });
-}
-
-function truncate(s: string, n = 16): string {
+function truncate(s: string, n = 13): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
 /**
- * Live hub-and-spoke view of the network: the gateway at the center, every
- * online device orbiting it, colored by trust status. Click a node to filter
- * the device list to it.
+ * Tiered network topology: Internet / ISP → your gateway → the LAN, with
+ * devices clustered into Trusted / Untrusted zones. Scroll to zoom, drag to
+ * pan, click a device to filter the list to it, and collapse a zone to tidy a
+ * busy network.
  */
 export function NetworkMap({
   devices,
@@ -63,26 +77,95 @@ export function NetworkMap({
 }) {
   const [open, setOpen] = useState(true);
   const [hover, setHover] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
 
-  const { hub, nodes } = useMemo(() => {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const drag = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  const moved = useRef(false);
+
+  const { hub, groups, onlineCount } = useMemo(() => {
     const online = devices.filter((d) => d.online === 1);
     const hub = online.find((d) => d.is_gateway) ?? null;
     const spokes = online.filter((d) => d.id !== hub?.id);
-    // One ring up to 12 nodes; split into two concentric rings beyond that.
-    if (spokes.length <= 12) {
-      return { hub, nodes: ring(spokes, 175) };
-    }
-    const half = Math.ceil(spokes.length / 2);
-    return {
-      hub,
-      nodes: [
-        ...ring(spokes.slice(0, half), 120),
-        ...ring(spokes.slice(half), 205, Math.PI / half),
-      ],
-    };
-  }, [devices]);
 
-  const onlineCount = nodes.length + (hub ? 1 : 0);
+    const defs: { key: "trusted" | "untrusted"; label: string; color: string }[] = [
+      { key: "trusted", label: "Trusted", color: STATUS.trusted.ring },
+      { key: "untrusted", label: "Untrusted", color: STATUS.untrusted.ring },
+    ];
+
+    const built: GroupLayout[] = defs
+      .map((def) => {
+        const list = spokes.filter((d) => groupKeyOf(d) === def.key);
+        const isCollapsed = collapsed[def.key] ?? false;
+        const cols = Math.min(MAX_COLS, Math.max(1, list.length));
+        const rows = Math.ceil(list.length / cols) || 1;
+        const w = cols * CELL_W + BOX_PAD * 2;
+        const h = isCollapsed ? HEADER_H + 8 : HEADER_H + rows * CELL_H + BOX_PAD;
+        return { ...def, devices: list, collapsed: isCollapsed, cols, w, h, x: 0, y: GROUPS_TOP };
+      })
+      .filter((g) => g.devices.length > 0);
+
+    // Center the row of group boxes horizontally under the gateway.
+    const totalW = built.reduce((s, g) => s + g.w, 0) + GROUP_GAP * Math.max(0, built.length - 1);
+    let gx = CX - totalW / 2;
+    for (const g of built) {
+      g.x = gx;
+      gx += g.w + GROUP_GAP;
+    }
+
+    return { hub, groups: built, onlineCount: online.length };
+  }, [devices, collapsed]);
+
+  // --- pan / zoom ---------------------------------------------------------
+  function toSvg(clientX: number, clientY: number): [number, number] {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return [0, 0];
+    return [((clientX - rect.left) * W) / rect.width, ((clientY - rect.top) * H) / rect.height];
+  }
+
+  function onWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    const [sx, sy] = toSvg(e.clientX, e.clientY);
+    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const scale = clamp(view.scale * factor, 0.4, 4);
+    const worldX = (sx - view.tx) / view.scale;
+    const worldY = (sy - view.ty) / view.scale;
+    setView({ scale, tx: sx - worldX * scale, ty: sy - worldY * scale });
+  }
+
+  function onPointerDown(e: React.PointerEvent) {
+    drag.current = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty };
+    moved.current = false;
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  }
+  function onPointerMove(e: React.PointerEvent) {
+    const start = drag.current;
+    if (!start) return;
+    const rect = svgRef.current?.getBoundingClientRect();
+    const k = rect && rect.width ? W / rect.width : 1;
+    const dx = (e.clientX - start.x) * k;
+    const dy = (e.clientY - start.y) * k;
+    if (Math.abs(dx) + Math.abs(dy) > 3) moved.current = true;
+    // Capture start values — the updater may run after pointerup nulls drag.current.
+    setView((v) => ({ ...v, tx: start.tx + dx, ty: start.ty + dy }));
+  }
+  function onPointerUp() {
+    drag.current = null;
+  }
+
+  function zoomBy(factor: number) {
+    const scale = clamp(view.scale * factor, 0.4, 4);
+    // zoom around the map center
+    const worldX = (CX - view.tx) / view.scale;
+    const worldY = (H / 2 - view.ty) / view.scale;
+    setView({ scale, tx: CX - worldX * scale, ty: H / 2 - worldY * scale });
+  }
+  const resetView = () => setView({ tx: 0, ty: 0, scale: 1 });
+
+  const guardedSelect = (d: Device) => {
+    if (!moved.current) onSelect?.(d);
+  };
 
   return (
     <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.02]">
@@ -115,80 +198,204 @@ export function NetworkMap({
             No devices online yet — the map fills in as the scan finds them.
           </div>
         ) : (
-          <svg
-            viewBox={`0 0 ${W} ${H}`}
-            className="h-auto w-full select-none"
-            role="img"
-            aria-label={`Network map with ${onlineCount} online devices`}
-          >
-            {/* spokes */}
-            {nodes.map((n) => (
-              <line
-                key={`l-${n.d.id}`}
-                x1={CX}
-                y1={CY}
-                x2={n.x}
-                y2={n.y}
-                stroke="#ffffff"
-                strokeOpacity={hover === n.d.id ? 0.28 : 0.08}
-                strokeWidth={1.5}
-              />
-            ))}
+          <div className="relative">
+            {/* zoom controls */}
+            <div className="absolute right-3 top-3 z-10 flex flex-col gap-1">
+              <MapBtn label="+" title="Zoom in" onClick={() => zoomBy(1.2)} />
+              <MapBtn label="−" title="Zoom out" onClick={() => zoomBy(1 / 1.2)} />
+              <MapBtn label="⤢" title="Reset view" onClick={resetView} />
+            </div>
+            <span className="pointer-events-none absolute bottom-2 left-4 z-10 text-[11px] text-zinc-600">
+              scroll to zoom · drag to pan · click a device to filter
+            </span>
 
-            {hub && <MapNode node={{ d: hub, x: CX, y: CY, status: "gateway" }} hub hover={hover} setHover={setHover} onSelect={onSelect} />}
-            {nodes.map((n) => (
-              <MapNode key={n.d.id} node={n} hover={hover} setHover={setHover} onSelect={onSelect} />
-            ))}
-          </svg>
+            <svg
+              ref={svgRef}
+              viewBox={`0 0 ${W} ${H}`}
+              className="h-auto w-full cursor-grab touch-none select-none active:cursor-grabbing"
+              role="img"
+              aria-label={`Network map with ${onlineCount} online devices`}
+              onWheel={onWheel}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerLeave={onPointerUp}
+            >
+              <g transform={`translate(${view.tx} ${view.ty}) scale(${view.scale})`}>
+                {/* edges: internet → gateway → each zone */}
+                <line x1={CX} y1={INTERNET_Y} x2={CX} y2={GATEWAY_Y} stroke="#ffffff" strokeOpacity={0.12} strokeWidth={1.5} />
+                {groups.map((g) => (
+                  <line
+                    key={`e-${g.key}`}
+                    x1={CX}
+                    y1={GATEWAY_Y}
+                    x2={g.x + g.w / 2}
+                    y2={g.y}
+                    stroke="#ffffff"
+                    strokeOpacity={0.1}
+                    strokeWidth={1.5}
+                  />
+                ))}
+
+                {/* Internet / ISP */}
+                <TierNode x={CX} y={INTERNET_Y} icon="🌐" label="Internet / ISP" ring="#64748b" r={26} />
+
+                {/* Gateway */}
+                {hub && (
+                  <DeviceNode
+                    d={hub}
+                    x={CX}
+                    y={GATEWAY_Y}
+                    r={30}
+                    hover={hover}
+                    setHover={setHover}
+                    onSelect={guardedSelect}
+                  />
+                )}
+
+                {/* Zones */}
+                {groups.map((g) => (
+                  <g key={g.key}>
+                    <rect
+                      x={g.x}
+                      y={g.y}
+                      width={g.w}
+                      height={g.h}
+                      rx={14}
+                      fill={g.color}
+                      fillOpacity={0.04}
+                      stroke={g.color}
+                      strokeOpacity={0.35}
+                    />
+                    <text x={g.x + 14} y={g.y + 24} fontSize={13} fontWeight={600} fill={g.color}>
+                      {g.label}
+                    </text>
+                    <text x={g.x + g.w - 40} y={g.y + 24} fontSize={12} fill="#a1a1aa">
+                      {g.devices.length}
+                    </text>
+                    <g
+                      className="cursor-pointer"
+                      role="button"
+                      aria-label={`${g.collapsed ? "Expand" : "Collapse"} ${g.label}`}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={() => setCollapsed((c) => ({ ...c, [g.key]: !g.collapsed }))}
+                    >
+                      <rect x={g.x + g.w - 26} y={g.y + 10} width={18} height={18} rx={5} fill="#ffffff" fillOpacity={0.06} />
+                      <text x={g.x + g.w - 17} y={g.y + 23} fontSize={13} textAnchor="middle" fill="#d4d4d8">
+                        {g.collapsed ? "+" : "–"}
+                      </text>
+                    </g>
+
+                    {!g.collapsed &&
+                      g.devices.map((d, i) => {
+                        const col = i % g.cols;
+                        const row = Math.floor(i / g.cols);
+                        const x = g.x + BOX_PAD + col * CELL_W + CELL_W / 2;
+                        const y = g.y + HEADER_H + row * CELL_H + CELL_H / 2 - 6;
+                        return (
+                          <DeviceNode
+                            key={d.id}
+                            d={d}
+                            x={x}
+                            y={y}
+                            r={22}
+                            hover={hover}
+                            setHover={setHover}
+                            onSelect={guardedSelect}
+                          />
+                        );
+                      })}
+                  </g>
+                ))}
+              </g>
+            </svg>
+          </div>
         ))}
     </section>
   );
 }
 
-function MapNode({
-  node,
-  hub = false,
+function MapBtn({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-black/40 text-sm text-zinc-300 backdrop-blur hover:bg-white/10 hover:text-white"
+    >
+      {label}
+    </button>
+  );
+}
+
+/** A non-device tier marker (Internet / ISP). */
+function TierNode({
+  x,
+  y,
+  icon,
+  label,
+  ring,
+  r,
+}: {
+  x: number;
+  y: number;
+  icon: string;
+  label: string;
+  ring: string;
+  r: number;
+}) {
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <circle r={r} fill="#0b0d12" stroke={ring} strokeWidth={2} opacity={0.9} />
+      <text textAnchor="middle" dominantBaseline="central" fontSize={24}>
+        {icon}
+      </text>
+      <text textAnchor="middle" y={r + 15} fontSize={12} fill="#a1a1aa">
+        {label}
+      </text>
+    </g>
+  );
+}
+
+function DeviceNode({
+  d,
+  x,
+  y,
+  r,
   hover,
   setHover,
   onSelect,
 }: {
-  node: Placed;
-  hub?: boolean;
+  d: Device;
+  x: number;
+  y: number;
+  r: number;
   hover: string | null;
   setHover: (id: string | null) => void;
-  onSelect?: (d: Device) => void;
+  onSelect: (d: Device) => void;
 }) {
-  const { d, x, y, status } = node;
-  const r = hub ? 34 : 24;
-  const active = hover === d.id;
+  const status = statusOf(d);
   const color = STATUS[status].ring;
+  const active = hover === d.id;
   const name = displayName(d);
-
   return (
     <g
       transform={`translate(${x} ${y})`}
       className="cursor-pointer"
       onMouseEnter={() => setHover(d.id)}
       onMouseLeave={() => setHover(null)}
-      onClick={() => onSelect?.(d)}
+      onClick={() => onSelect(d)}
     >
       <title>{`${name}${d.ip ? ` · ${d.ip}` : ""}`}</title>
-      <circle
-        r={r}
-        fill="#0b0d12"
-        stroke={color}
-        strokeWidth={active ? 3 : 2}
-        opacity={active ? 1 : 0.9}
-      />
-      <text textAnchor="middle" dominantBaseline="central" fontSize={hub ? 30 : 22}>
+      <circle r={r} fill="#0b0d12" stroke={color} strokeWidth={active ? 3 : 2} opacity={active ? 1 : 0.9} />
+      <text textAnchor="middle" dominantBaseline="central" fontSize={r > 26 ? 26 : 20}>
         {deviceIcon(d)}
       </text>
       <text
         textAnchor="middle"
-        y={r + 15}
+        y={r + 14}
         fontSize={12}
         fill={active ? "#fafafa" : "#a1a1aa"}
-        fontWeight={hub ? 600 : 400}
+        fontWeight={d.is_gateway ? 600 : 400}
       >
         {truncate(name)}
       </text>

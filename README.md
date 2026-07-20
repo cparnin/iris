@@ -36,8 +36,9 @@ shows up — no router login, no agents on your devices, runs entirely on your M
 - **Naming & trust** — rename any device, mark devices trusted.
 - **Pause / off switch** — **⏸ Pause** halts scanning (and its CPU/network use)
   while keeping the dashboard live; **⏻ Quit** stops Iris entirely from the header.
-- **Network map** — live hub-and-spoke diagram of the gateway and every online
-  device, colored by trust status; click a node to filter the list to it.
+- **Network map** — live tiered topology: Internet / ISP → your gateway → the
+  LAN, with devices clustered into Trusted / Untrusted zones. Scroll to zoom,
+  drag to pan, collapse a zone, and click a device to filter the list to it.
 - **Live everything** — real-time (SSE) activity feed; auto-rescan on an interval.
 - **History** — everything persists in SQLite and survives restarts.
 
@@ -65,19 +66,31 @@ Iris sees your entire home network, so it's built to stay yours:
 
 ## Quick start
 
+**Production (lean — one process, ~60MB, recommended for everyday use):**
+
 ```bash
-npm install   # one npm workspace — installs server + web together
-npm run dev   # backend on 127.0.0.1:4000, dashboard on :5173
+npm install       # one npm workspace — installs server + web together
+npm run build     # compile the server + bundle the dashboard
+npm start         # serves API + dashboard on http://127.0.0.1:4000
+```
+
+Open **http://localhost:4000**. One Node process serves everything — no Vite dev
+server, no bundler, no file-watchers. Re-run `npm run build` after code changes.
+
+**Development (hot-reload while hacking on Iris, ~200MB):**
+
+```bash
+npm run dev       # API on :4000, Vite dashboard on :5173 (edits reload live)
 ```
 
 Open **http://localhost:5173**. The first scan runs automatically and repeats
 every 5 minutes (tune with `SCAN_INTERVAL_MS`). Hit **Scan now** anytime for an
-on-demand refresh.
+on-demand refresh, or use **⏸ Pause** / **⏻ Quit** in the header.
 
 ### Keep it running (auto-start on login)
 
 On macOS, install a LaunchAgent so Iris starts at login and restarts if it
-crashes:
+crashes. It runs the lean production build (builds once if needed):
 
 ```bash
 ./scripts/install-autostart.sh     # enable

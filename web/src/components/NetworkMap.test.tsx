@@ -36,3 +36,46 @@ test("shows an empty state when nothing is online", () => {
   render(<NetworkMap devices={[makeDevice({ online: 0 })]} />);
   expect(screen.getByText(/No devices online yet/)).toBeInTheDocument();
 });
+
+test("renders the Internet/ISP tier above the gateway", () => {
+  render(<NetworkMap devices={[makeDevice({ id: "gw", is_gateway: 1, hostname: "eero", ip: "192.168.4.1" })]} />);
+  expect(screen.getByText("Internet / ISP")).toBeInTheDocument();
+  expect(screen.getByText("eero")).toBeInTheDocument();
+});
+
+test("clusters devices into Trusted and Untrusted zones", () => {
+  render(
+    <NetworkMap
+      devices={[
+        makeDevice({ id: "gw", is_gateway: 1, hostname: "eero", ip: "192.168.4.1" }),
+        makeDevice({ id: "mac", is_self: 1, hostname: "My-Mac", ip: "192.168.4.2" }),
+        makeDevice({ id: "tv", hostname: "Trusted-TV", trusted: 1, ip: "192.168.4.7" }),
+        makeDevice({ id: "iot", hostname: "Sketchy-IoT", trusted: 0, ip: "192.168.4.9" }),
+      ]}
+    />
+  );
+  // Zone labels ("Trusted"/"Untrusted") also appear in the legend, so identify
+  // the zones by their unique collapse-toggle labels instead.
+  expect(screen.getByLabelText("Collapse Trusted")).toBeInTheDocument();
+  expect(screen.getByLabelText("Collapse Untrusted")).toBeInTheDocument();
+  // self + trusted land in Trusted; the untrusted device is on its own.
+  expect(screen.getByText("My-Mac")).toBeInTheDocument();
+  expect(screen.getByText("Trusted-TV")).toBeInTheDocument();
+  expect(screen.getByText("Sketchy-IoT")).toBeInTheDocument();
+});
+
+test("collapsing a zone hides its devices", () => {
+  render(
+    <NetworkMap
+      devices={[
+        makeDevice({ id: "gw", is_gateway: 1, hostname: "eero", ip: "192.168.4.1" }),
+        makeDevice({ id: "iot", hostname: "Sketchy-IoT", trusted: 0, ip: "192.168.4.9" }),
+      ]}
+    />
+  );
+  expect(screen.getByText("Sketchy-IoT")).toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText("Collapse Untrusted"));
+  expect(screen.queryByText("Sketchy-IoT")).not.toBeInTheDocument();
+  // zone header remains — the toggle now offers to expand it again
+  expect(screen.getByLabelText("Expand Untrusted")).toBeInTheDocument();
+});

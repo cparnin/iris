@@ -1,5 +1,8 @@
 import express from "express";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { isLoopbackHost } from "./security.js";
 import { listDevices, recentEvents, setLabel, setTrusted, getDeviceById } from "./db.js";
 import { portScan } from "./net/portscan.js";
@@ -187,8 +190,21 @@ app.get("/api/stream", (req, res) => {
   });
 });
 
+// In production we serve the compiled dashboard from the same origin as the API
+// (so there's no Vite dev server, no bundler, and no CORS surface). In dev this
+// folder doesn't exist and Vite serves the UI on :5173 with a proxy instead.
+const here = dirname(fileURLToPath(import.meta.url));
+const WEB_DIST = join(here, "..", "..", "web", "dist");
+const servingUI = existsSync(join(WEB_DIST, "index.html"));
+if (servingUI) {
+  app.use(express.static(WEB_DIST));
+  // SPA fallback: any non-/api route returns index.html so client routing works.
+  app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(join(WEB_DIST, "index.html")));
+}
+
 app.listen(PORT, HOST, () => {
   console.log(`\n  Iris server → http://${HOST}:${PORT}`);
+  console.log(`  Dashboard: ${servingUI ? `http://${HOST}:${PORT}` : "run `npm run dev` (Vite on :5173)"}`);
   console.log(`  Auto-scanning every ${Math.round(SCAN_INTERVAL_MS / 1000)}s`);
   console.log(`  ntfy notifications: ${isNtfyConfigured() ? "on" : "off (set NTFY_URL)"}\n`);
   startAutoScan(SCAN_INTERVAL_MS);
