@@ -1,6 +1,6 @@
 #!/bin/bash
-# Launch wrapper for Iris, used by the macOS LaunchAgent
-# (~/Library/LaunchAgents/com.iris.dashboard.plist) so it auto-starts at login.
+# Launch wrapper for Polaris, used by the macOS LaunchAgent
+# (~/Library/LaunchAgents/com.polaris.dashboard.plist) so it auto-starts at login.
 #
 # Runs the LEAN PRODUCTION build: one Node process serving both the API and the
 # compiled dashboard on http://127.0.0.1:4000 — no Vite dev server, no bundler,

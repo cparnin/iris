@@ -127,14 +127,14 @@ export default function App() {
   if (stopped) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
-        <img src="/logo.svg" alt="Iris" className="h-14 w-14 opacity-60" />
-        <h1 className="text-2xl font-bold text-white">Iris is stopped</h1>
+        <img src="/logo.svg" alt="Polaris" className="h-14 w-14 opacity-60" />
+        <h1 className="text-2xl font-bold text-white">Polaris is stopped</h1>
         <p className="max-w-md text-sm text-zinc-400">
           The scanner and dashboard have shut down and won't restart on their own until
-          your next login. To bring Iris back now, run this in your terminal:
+          your next login. To bring Polaris back now, run this in your terminal:
         </p>
         <code className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-emerald-300">
-          launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.iris.dashboard.plist
+          launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.polaris.dashboard.plist
         </code>
         <p className="text-xs text-zinc-600">Then reload this page.</p>
       </div>
@@ -146,9 +146,9 @@ export default function App() {
       {/* Header */}
       <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <img src="/logo.svg" alt="Iris" className="h-11 w-11" />
+          <img src="/logo.svg" alt="Polaris" className="h-11 w-11" />
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-white">Iris</h1>
+            <h1 className="text-xl font-bold tracking-tight text-white">Polaris</h1>
             <p className="mt-0.5 text-sm text-zinc-500">
               {lastScan ? (
                 <>
@@ -206,7 +206,7 @@ export default function App() {
           <button
             onClick={confirmQuit ? quit : () => setConfirmQuit(true)}
             onMouseLeave={() => setConfirmQuit(false)}
-            title="Stop Iris entirely (server + dashboard)"
+            title="Stop Polaris entirely (server + dashboard)"
             className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors ${
               confirmQuit
                 ? "bg-red-500 text-white hover:bg-red-400"
@@ -274,7 +274,7 @@ export default function App() {
       </div>
 
       <footer className="mt-8 text-center text-xs text-zinc-600">
-        Iris · Phase 2 · Visibility + Alerts. Rename devices, mark trusted, get pinged when
+        Polaris · Phase 2 · Visibility + Alerts. Rename devices, mark trusted, get pinged when
         something new joins.
       </footer>
     </div>

@@ -1,45 +1,48 @@
-<svg width="220" height="220" viewBox="0 0 220 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Iris logo">
+<svg width="220" height="220" viewBox="0 0 220 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Polaris logo">
   <defs>
-    <radialGradient id="irisGrad" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#34d399"/>
-      <stop offset="55%" stop-color="#0ea5a4"/>
-      <stop offset="100%" stop-color="#0b3b3a"/>
+    <radialGradient id="starCore" cx="50%" cy="42%" r="60%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="38%" stop-color="#9ff3d8"/>
+      <stop offset="100%" stop-color="#34d399"/>
     </radialGradient>
-    <linearGradient id="sweep" x1="110" y1="110" x2="200" y2="70" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#34d399" stop-opacity="0.9"/>
-      <stop offset="100%" stop-color="#34d399" stop-opacity="0"/>
-    </linearGradient>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#5ff0b8" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#5ff0b8" stop-opacity="0"/>
+    </radialGradient>
   </defs>
 
   <!-- backdrop -->
   <rect width="220" height="220" rx="44" fill="#0a0b0f"/>
 
-  <!-- concentric radar rings -->
+  <!-- concentric orbit rings -->
   <circle cx="110" cy="110" r="86" stroke="#1f2937" stroke-width="1.5"/>
   <circle cx="110" cy="110" r="64" stroke="#1f2937" stroke-width="1.5"/>
   <circle cx="110" cy="110" r="42" stroke="#243244" stroke-width="1.5"/>
 
-  <!-- radar sweep wedge -->
-  <path d="M110 110 L196 110 A86 86 0 0 0 170 49 Z" fill="url(#sweep)"/>
+  <!-- orbiting device nodes + links (the "network" around the star), tucked
+       into the diagonal gaps between the star's points -->
+  <g opacity="0.85">
+    <line x1="110" y1="110" x2="161" y2="59" stroke="#7dd3fc" stroke-width="1.5" opacity="0.6"/>
+    <line x1="110" y1="110" x2="59" y2="59" stroke="#7dd3fc" stroke-width="1.5" opacity="0.6"/>
+    <line x1="110" y1="110" x2="161" y2="161" stroke="#7dd3fc" stroke-width="1.5" opacity="0.6"/>
+    <line x1="110" y1="110" x2="59" y2="161" stroke="#7dd3fc" stroke-width="1.5" opacity="0.6"/>
+    <circle cx="161" cy="59" r="5" fill="#7dd3fc"/>
+    <circle cx="59" cy="59" r="5" fill="#7dd3fc"/>
+    <circle cx="161" cy="161" r="5" fill="#7dd3fc"/>
+    <circle cx="59" cy="161" r="5" fill="#7dd3fc"/>
+  </g>
 
-  <!-- eye almond outline -->
-  <path d="M24 110 Q110 34 196 110 Q110 186 24 110 Z" stroke="#34d399" stroke-width="3.5" fill="none" opacity="0.85"/>
+  <!-- glow halo behind the star -->
+  <circle cx="110" cy="110" r="72" fill="url(#halo)"/>
 
-  <!-- iris -->
-  <circle cx="110" cy="110" r="40" fill="url(#irisGrad)"/>
-  <circle cx="110" cy="110" r="40" stroke="#34d399" stroke-width="2" opacity="0.6"/>
+  <!-- Polaris: a four-point navigational north star with concave edges -->
+  <path d="M110 18
+           C114 92 118 106 202 110
+           C118 114 114 128 110 202
+           C106 128 102 114 18 110
+           C102 106 106 92 110 18 Z"
+        fill="url(#starCore)"/>
 
-  <!-- satellite device nodes + links (the "network" pupil) -->
-  <line x1="110" y1="110" x2="150" y2="78" stroke="#7dd3fc" stroke-width="1.5" opacity="0.7"/>
-  <line x1="110" y1="110" x2="70" y2="86" stroke="#7dd3fc" stroke-width="1.5" opacity="0.7"/>
-  <line x1="110" y1="110" x2="132" y2="146" stroke="#7dd3fc" stroke-width="1.5" opacity="0.7"/>
-  <line x1="110" y1="110" x2="82" y2="142" stroke="#7dd3fc" stroke-width="1.5" opacity="0.7"/>
-  <circle cx="150" cy="78" r="5" fill="#7dd3fc"/>
-  <circle cx="70" cy="86" r="5" fill="#7dd3fc"/>
-  <circle cx="132" cy="146" r="5" fill="#7dd3fc"/>
-  <circle cx="82" cy="142" r="5" fill="#7dd3fc"/>
-
-  <!-- pupil hub -->
-  <circle cx="110" cy="110" r="14" fill="#0a0b0f" stroke="#34d399" stroke-width="2.5"/>
-  <circle cx="110" cy="110" r="5" fill="#34d399"/>
+  <!-- bright core -->
+  <circle cx="110" cy="110" r="8.5" fill="#ffffff"/>
 </svg>

@@ -3,7 +3,7 @@ import { displayNameOf } from "./db.js";
 
 /**
  * ntfy push notifications. Configure via environment:
- *   NTFY_URL       full topic URL, e.g. https://ntfy.sh/iris-home-abc123
+ *   NTFY_URL       full topic URL, e.g. https://ntfy.sh/polaris-home-abc123
  *                  (use a long, unguessable topic — anyone who knows it can read it)
  *   NTFY_TOKEN     optional access token for protected/self-hosted servers
  *   NTFY_PRIORITY  optional default priority (min|low|default|high|urgent)

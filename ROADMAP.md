@@ -1,4 +1,4 @@
-# Iris roadmap
+# Polaris roadmap
 
 A phased path from "see everything" to "control everything." Phase 1 is built.
 

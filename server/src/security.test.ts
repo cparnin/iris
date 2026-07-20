@@ -22,6 +22,6 @@ test("isLoopbackHost rejects non-loopback hosts (DNS-rebinding defense)", () => 
 });
 
 test("isLoopbackHost honors the explicit allow-list", () => {
-  assert.equal(isLoopbackHost("iris.lan", []), false);
-  assert.equal(isLoopbackHost("iris.lan", ["iris.lan"]), true);
+  assert.equal(isLoopbackHost("polaris.lan", []), false);
+  assert.equal(isLoopbackHost("polaris.lan", ["polaris.lan"]), true);
 });

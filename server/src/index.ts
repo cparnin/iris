@@ -67,7 +67,7 @@ app.post("/api/resume", (_req, res) => {
   res.json({ ok: true, paused: false });
 });
 
-// Full off switch: stop Iris entirely. If we're running as the macOS
+// Full off switch: stop Polaris entirely. If we're running as the macOS
 // LaunchAgent, boot the whole job out so KeepAlive doesn't respawn it (it will
 // come back at next login); otherwise just exit the process. Runs detached so
 // it completes even as this process is torn down.
@@ -75,7 +75,7 @@ app.post("/api/quit", (_req, res) => {
   res.json({ ok: true, stopping: true });
   setTimeout(() => {
     const uid = process.getuid?.() ?? 0;
-    const label = process.env.IRIS_LAUNCHD_LABEL ?? "com.iris.dashboard";
+    const label = process.env.POLARIS_LAUNCHD_LABEL ?? "com.polaris.dashboard";
     try {
       const child = spawn("launchctl", ["bootout", `gui/${uid}/${label}`], {
         detached: true,
@@ -96,8 +96,8 @@ app.post("/api/notify/test", async (_req, res) => {
     return;
   }
   const ok = await sendNtfy({
-    title: "Iris test notification 🛰️",
-    message: "If you can read this, Iris can reach your ntfy topic.",
+    title: "Polaris test notification 🛰️",
+    message: "If you can read this, Polaris can reach your ntfy topic.",
     tags: ["eye", "white_check_mark"],
   });
   res.status(ok ? 200 : 502).json({ ok });
@@ -203,7 +203,7 @@ if (servingUI) {
 }
 
 app.listen(PORT, HOST, () => {
-  console.log(`\n  Iris server → http://${HOST}:${PORT}`);
+  console.log(`\n  Polaris server → http://${HOST}:${PORT}`);
   console.log(`  Dashboard: ${servingUI ? `http://${HOST}:${PORT}` : "run `npm run dev` (Vite on :5173)"}`);
   console.log(`  Auto-scanning every ${Math.round(SCAN_INTERVAL_MS / 1000)}s`);
   console.log(`  ntfy notifications: ${isNtfyConfigured() ? "on" : "off (set NTFY_URL)"}\n`);

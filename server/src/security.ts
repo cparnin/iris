@@ -14,12 +14,12 @@ export function hostnameOf(hostHeader: string): string {
 /**
  * Is this Host header a loopback address (or an explicitly-allowed host)?
  *
- * Iris binds to loopback and exposes your whole network map, so we reject any
+ * Polaris binds to loopback and exposes your whole network map, so we reject any
  * request whose Host header isn't loopback. This is the key defense against
  * DNS-rebinding: a malicious page can point its own domain at 127.0.0.1 and
  * fetch this API from your browser, but the Host header still carries the
  * attacker's domain — which this check refuses. `extra` allows opt-in hosts
- * (via ALLOWED_HOSTS) for anyone who deliberately runs Iris off-loopback.
+ * (via ALLOWED_HOSTS) for anyone who deliberately runs Polaris off-loopback.
  */
 export function isLoopbackHost(hostHeader: string, extra: string[] = []): boolean {
   const host = hostnameOf(hostHeader);

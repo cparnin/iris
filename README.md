@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="./assets/hero.svg" alt="Iris — god-mode for your home network" width="100%" />
+<img src="./assets/hero.svg" alt="Polaris — god-mode for your home network" width="100%" />
 
-# 👁️ Iris
+# ✦ Polaris
 
 **God-mode visibility over your home network.** Discovers every device on your LAN,
 tells you who's online, names them, and pings your phone the moment something new
@@ -35,7 +35,7 @@ shows up — no router login, no agents on your devices, runs entirely on your M
   joins. Untrusted-online count is surfaced front-and-center.
 - **Naming & trust** — rename any device, mark devices trusted.
 - **Pause / off switch** — **⏸ Pause** halts scanning (and its CPU/network use)
-  while keeping the dashboard live; **⏻ Quit** stops Iris entirely from the header.
+  while keeping the dashboard live; **⏻ Quit** stops Polaris entirely from the header.
 - **Network map** — live tiered topology: Internet / ISP → your gateway → the
   LAN, with devices clustered into Trusted / Untrusted zones. Scroll to zoom,
   drag to pan, collapse a zone, and click a device to filter the list to it.
@@ -44,7 +44,7 @@ shows up — no router login, no agents on your devices, runs entirely on your M
 
 ## Security model
 
-Iris sees your entire home network, so it's built to stay yours:
+Polaris sees your entire home network, so it's built to stay yours:
 
 - **The API binds to `127.0.0.1` only.** It is never reachable from the LAN by
   default — the device inventory it exposes stays on your machine.
@@ -52,7 +52,7 @@ Iris sees your entire home network, so it's built to stay yours:
   a malicious web page can't point its own domain at `127.0.0.1` and read your
   network map from your browser. There is **no wide-open CORS** — the dashboard
   talks to the API same-origin, so none is needed.
-- **No telemetry, no cloud.** The only outbound request Iris ever makes is the
+- **No telemetry, no cloud.** The only outbound request Polaris ever makes is the
   ntfy push you explicitly configure (and MAC-vendor lookups are fully offline).
 - **Your device database never leaves your machine** — `data/` is git-ignored.
 - Override the bind address with `HOST=0.0.0.0` only if you know what you're doing
@@ -66,7 +66,7 @@ Iris sees your entire home network, so it's built to stay yours:
 
 ## Quick start
 
-**Production (lean — one process, ~60MB, recommended for everyday use):**
+**Production (lean — one process, ~90MB, recommended for everyday use):**
 
 ```bash
 npm install       # one npm workspace — installs server + web together
@@ -77,7 +77,7 @@ npm start         # serves API + dashboard on http://127.0.0.1:4000
 Open **http://localhost:4000**. One Node process serves everything — no Vite dev
 server, no bundler, no file-watchers. Re-run `npm run build` after code changes.
 
-**Development (hot-reload while hacking on Iris, ~200MB):**
+**Development (hot-reload while hacking on Polaris, ~200MB):**
 
 ```bash
 npm run dev       # API on :4000, Vite dashboard on :5173 (edits reload live)
@@ -89,7 +89,7 @@ on-demand refresh, or use **⏸ Pause** / **⏻ Quit** in the header.
 
 ### Keep it running (auto-start on login)
 
-On macOS, install a LaunchAgent so Iris starts at login and restarts if it
+On macOS, install a LaunchAgent so Polaris starts at login and restarts if it
 crashes. It runs the lean production build (builds once if needed):
 
 ```bash
@@ -97,16 +97,16 @@ crashes. It runs the lean production build (builds once if needed):
 ./scripts/uninstall-autostart.sh   # disable
 ```
 
-Logs go to `~/Library/Logs/iris-dashboard.log`.
+Logs go to `~/Library/Logs/polaris-dashboard.log`.
 
 ## Notifications (ntfy)
 
-Point Iris at any [ntfy](https://ntfy.sh) topic (public or self-hosted). Use a
+Point Polaris at any [ntfy](https://ntfy.sh) topic (public or self-hosted). Use a
 **long, unguessable topic name** — anyone who knows a public topic can read it.
 
 ```bash
 # .env (see .env.example)
-NTFY_URL=https://ntfy.sh/iris-home-8fk39dk2mx7
+NTFY_URL=https://ntfy.sh/polaris-home-8fk39dk2mx7
 # NTFY_TOKEN=tk_...        # optional, for protected/self-hosted servers
 # NTFY_PRIORITY=high       # optional default priority
 ```
@@ -128,7 +128,7 @@ in the header to fire a test push. New devices trigger a notification automatica
 | `NTFY_TOKEN`       | *(unset)*     | ntfy bearer token (optional)              |
 | `NTFY_PRIORITY`    | `default`     | default ntfy priority                     |
 | `ALLOWED_HOSTS`    | *(unset)*     | extra Host headers allowed (off-loopback) |
-| `IRIS_DATA_DIR`    | `./data`      | where the SQLite database lives           |
+| `POLARIS_DATA_DIR`    | `./data`      | where the SQLite database lives           |
 
 ## Architecture
 
@@ -139,7 +139,7 @@ server/  Node + TypeScript
   net/mdns.ts      hand-rolled reverse-mDNS + service-discovery resolver
   net/netbios.ts   NetBIOS node-status names (Windows / NAS / Samba)
   net/vendors.ts   MAC → vendor via bundled OUI DB
-  db.ts            SQLite (iris.sqlite): devices + events (auto-pruned), scan diffing
+  db.ts            SQLite (polaris.sqlite): devices + events (auto-pruned), scan diffing
   notify.ts        ntfy push notifications
   security.ts      loopback Host-header guard (DNS-rebinding defense)
   scanner.ts       scan orchestration + auto-scan loop + event bus

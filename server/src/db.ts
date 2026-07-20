@@ -5,19 +5,23 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = process.env.IRIS_DATA_DIR ?? join(here, "..", "..", "data");
+const DATA_DIR = process.env.POLARIS_DATA_DIR ?? join(here, "..", "..", "data");
 mkdirSync(DATA_DIR, { recursive: true });
 
-const DB_PATH = join(DATA_DIR, "iris.sqlite");
-// One-time rename from the pre-rebrand filename so existing device history
-// carries over instead of starting from an empty database.
-const LEGACY_DB = join(DATA_DIR, "cap-network.sqlite");
-if (!existsSync(DB_PATH) && existsSync(LEGACY_DB)) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    try {
-      renameSync(LEGACY_DB + suffix, DB_PATH + suffix);
-    } catch {
-      /* WAL/SHM may be absent — the main file is what matters */
+const DB_PATH = join(DATA_DIR, "polaris.sqlite");
+// One-time rename from an earlier filename so existing device history carries
+// over across rebrands instead of starting from an empty database. Tries each
+// prior name in order (newest first): iris.sqlite → cap-network.sqlite.
+const LEGACY_DBS = ["iris.sqlite", "cap-network.sqlite"];
+if (!existsSync(DB_PATH)) {
+  const legacy = LEGACY_DBS.map((n) => join(DATA_DIR, n)).find((p) => existsSync(p));
+  if (legacy) {
+    for (const suffix of ["", "-wal", "-shm"]) {
+      try {
+        renameSync(legacy + suffix, DB_PATH + suffix);
+      } catch {
+        /* WAL/SHM may be absent — the main file is what matters */
+      }
     }
   }
 }

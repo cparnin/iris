@@ -1,17 +1,18 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Iris">
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Polaris">
   <defs>
-    <radialGradient id="fi" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#5ff0b8"/>
-      <stop offset="60%" stop-color="#0ea5a4"/>
-      <stop offset="100%" stop-color="#0b3b3a"/>
+    <radialGradient id="fc" cx="50%" cy="42%" r="60%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="45%" stop-color="#5ff0b8"/>
+      <stop offset="100%" stop-color="#0ea5a4"/>
     </radialGradient>
   </defs>
   <rect width="32" height="32" rx="7" fill="#0a0b0f"/>
-  <!-- eye almond -->
-  <path d="M4 16 Q16 5 28 16 Q16 27 4 16 Z" fill="none" stroke="#34d399" stroke-width="2.2"/>
-  <!-- iris -->
-  <circle cx="16" cy="16" r="7.2" fill="url(#fi)"/>
-  <!-- pupil -->
-  <circle cx="16" cy="16" r="3" fill="#0a0b0f"/>
-  <circle cx="16" cy="16" r="1.2" fill="#5ff0b8"/>
+  <!-- four-point north star -->
+  <path d="M16 2.5
+           C16.7 13.3 18.7 15.3 29.5 16
+           C18.7 16.7 16.7 18.7 16 29.5
+           C15.3 18.7 13.3 16.7 2.5 16
+           C13.3 15.3 15.3 13.3 16 2.5 Z"
+        fill="url(#fc)"/>
+  <circle cx="16" cy="16" r="2" fill="#ffffff"/>
 </svg>

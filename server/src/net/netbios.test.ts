@@ -23,10 +23,10 @@ function buildResponse(names: { name: string; suffix: number; group?: boolean }[
 test("parseNodeStatus extracts the unique <00> workstation name", () => {
   const buf = buildResponse([
     { name: "WORKGROUP", suffix: 0x00, group: true }, // skipped (group)
-    { name: "IRIS-PC", suffix: 0x00 }, // the machine name we want
-    { name: "IRIS-PC", suffix: 0x20 }, // server service — not <00>
+    { name: "POLARIS-PC", suffix: 0x00 }, // the machine name we want
+    { name: "POLARIS-PC", suffix: 0x20 }, // server service — not <00>
   ]);
-  assert.equal(parseNodeStatus(buf), "IRIS-PC");
+  assert.equal(parseNodeStatus(buf), "POLARIS-PC");
 });
 
 test("parseNodeStatus trims padding on a lone name", () => {
