@@ -24,14 +24,36 @@ It auto-starts at login as a macOS LaunchAgent **`com.polaris.dashboard`**
 (`scripts/install-autostart.sh` → `scripts/polaris-start.sh`), running the lean
 production build: **a single ~95MB Node process on http://127.0.0.1:4000**.
 
-- **Production is NOT hot-reload.** After changing code:
-  `npm run build && ./scripts/polarisctl restart`
-- Use **`./scripts/polarisctl {start|stop|restart|status|logs}`** rather than raw
-  `launchctl` — it wraps the `gui/$(id -u)/...` syntax.
+- **`./polaris` (repo root) is the start/stop switch:**
+  `./polaris` (status) · `start` · `stop` · `restart` · `rebuild` · `logs` · `open`.
+  It's the only control script — it wraps the `launchctl gui/$(id -u)/...`
+  syntax. Never call `launchctl` directly.
+- **Production is NOT hot-reload.** After changing code: **`./polaris rebuild`**
+  (= `npm run build` + restart).
+- **Don't run `scripts/polaris-start.sh` by hand** — it's the launchd wrapper.
+  launchd already holds :4000, so a manual run hits `EADDRINUSE`. It now detects
+  that and exits cleanly instead of throwing a stack trace that looks like a crash.
 - Logs: `~/Library/Logs/polaris-dashboard.log` (+ `.err.log`)
 - The UI also has **⏸ Pause** (stop scanning) and **⏻ Quit** (stop everything).
 - New devices are auto port-scanned on arrival (`AUTOSCAN_NEW_DEVICES=0` to
   disable), and the finding is folded into the ntfy alert.
+
+## Definition of done
+
+No change is finished until all of these are true. Don't ask whether to do them
+— they are the baseline, not an upsell.
+
+1. **Tests.** Add or update tests for the behavior you changed. `npm test` passes.
+2. **Docs.** Update `README.md` and this file if behavior, commands, env vars,
+   file layout, or endpoints changed. A doc that describes a deleted script is a
+   bug — grep for the old name before you call it done.
+3. **Security.** Re-read the security posture below against your change. Any new
+   route, input, or shell/network call gets validated at the boundary.
+4. **Verify for real.** Build it and drive it (`./polaris rebuild`, then the
+   browser or curl). Tests passing is not the same as the app working.
+5. **Keep it lean.** No new dependency without a clear reason — see Conventions.
+6. **Commit and push.** Every time, without being asked. Small, focused commits
+   with a message that says why. Push to `origin`.
 
 ## Gotchas that have bitten before
 

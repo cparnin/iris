@@ -1,0 +1,71 @@
+#!/bin/bash
+# polaris — the switch. Run it from the repo root:
+#
+#   ./polaris          # is it running?
+#   ./polaris start
+#   ./polaris stop     # stays off until you start it (or next login)
+#   ./polaris restart  # pick up code changes
+#   ./polaris rebuild  # npm run build, then restart
+#   ./polaris logs     # tail the log
+#   ./polaris open     # open the dashboard
+#
+# Polaris runs as a macOS LaunchAgent. This is the only thing you need to run;
+# it exists so you never have to type `launchctl bootout gui/501/com.polaris...`.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LABEL="com.polaris.dashboard"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+LOG="$HOME/Library/Logs/polaris-dashboard.log"
+TARGET="gui/$(id -u)/$LABEL"
+URL="http://127.0.0.1:4000"
+
+serving() { curl -sf -o /dev/null --max-time 3 "$URL/api/health"; }
+
+# launchctl returns before the server is listening, so wait for a real response.
+wait_ready() {
+  echo -n "$1 Polaris"
+  for _ in $(seq 1 30); do
+    sleep 1; echo -n "."
+    if serving; then echo " ready → $URL"; return 0; fi
+  done
+  echo " (no answer yet — check: ./polaris logs)"
+}
+
+case "${1:-status}" in
+  status|"")
+    if serving; then echo "Polaris: RUNNING → $URL"
+    elif launchctl print "$TARGET" >/dev/null 2>&1; then
+      echo "Polaris: loaded but not answering (check: ./polaris logs)"
+    else echo "Polaris: STOPPED  (start it with: ./polaris start)"; fi
+    ;;
+
+  start)
+    if serving; then echo "Polaris is already running → $URL"; exit 0; fi
+    [ -f "$PLIST" ] || { echo "Not installed. Run ./scripts/install-autostart.sh first."; exit 1; }
+    launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null
+    wait_ready "Starting"
+    ;;
+
+  stop)
+    launchctl bootout "$TARGET" 2>/dev/null
+    echo "Polaris stopped. It stays off until you run: ./polaris start"
+    echo "(It also comes back on its own at your next login.)"
+    ;;
+
+  restart)
+    launchctl kickstart -k "$TARGET" 2>/dev/null || { exec "$0" start; }
+    wait_ready "Restarting"
+    ;;
+
+  rebuild)
+    (cd "$ROOT" && npm run build) || exit 1
+    exec "$0" restart
+    ;;
+
+  logs) echo "Tailing $LOG  (ctrl-C to quit)"; exec tail -f "$LOG" ;;
+  open) exec open "$URL" ;;
+
+  -h|--help|help) sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
+  *) echo "usage: ./polaris {status|start|stop|restart|rebuild|logs|open}" >&2; exit 2 ;;
+esac

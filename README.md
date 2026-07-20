@@ -104,15 +104,19 @@ crashes. It runs the lean production build (builds once if needed):
 ./scripts/uninstall-autostart.sh   # remove entirely
 ```
 
-Day to day, use the control script instead of raw `launchctl`:
+Day to day, use `./polaris` in the repo root instead of raw `launchctl`:
 
 ```bash
-./scripts/polarisctl status     # is it running?
-./scripts/polarisctl stop       # turn it off
-./scripts/polarisctl start      # turn it back on
-./scripts/polarisctl restart    # pick up changes after `npm run build`
-./scripts/polarisctl logs       # tail the log
+./polaris            # is it running?
+./polaris stop       # turn it off (stays off until you start it)
+./polaris start      # turn it back on
+./polaris restart    # pick up changes after `npm run build`
+./polaris rebuild    # build + restart, in one step
+./polaris logs       # tail the log
+./polaris open       # open the dashboard in a browser
 ```
+
+That's the whole interface — it drives the LaunchAgent for you.
 
 Logs go to `~/Library/Logs/polaris-dashboard.log`.
 
@@ -176,7 +180,8 @@ web/     Vite + React 19 + Tailwind v4 dashboard
   components/NetworkMap.tsx        tiered topology, zoom/pan, exposure badges
   components/DeviceDetailPanel.tsx click-to-inspect drawer + port scan
   components/DeviceCard.tsx        device grid card (rename, trust, scan)
-scripts/ polarisctl (start/stop/restart/status/logs) + autostart install
+polaris  start/stop/restart/rebuild/status/logs — the one control script
+scripts/ autostart install/uninstall + the launchd start wrapper
 ```
 
 ### API (localhost only)

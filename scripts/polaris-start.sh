@@ -9,6 +9,16 @@
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 cd "$(dirname "$0")/.." || exit 1
 
+# Don't run a second copy on top of the one launchd already has. Without this,
+# running this script by hand while the service is up dumps a raw EADDRINUSE
+# stack trace, which reads like a crash when it's really "already running".
+if curl -sf -o /dev/null --max-time 3 http://127.0.0.1:4000/api/health; then
+  echo "Polaris is already running → http://127.0.0.1:4000"
+  echo "This script is the launchd wrapper; you don't need to run it by hand."
+  echo "Use: ./polaris {status|stop|restart|logs}"
+  exit 0
+fi
+
 # Build once if the compiled output is missing (first run, or after a clean).
 # When you change the code, run `npm run build` to refresh it.
 if [ ! -f server/dist/index.js ] || [ ! -f web/dist/index.html ]; then
