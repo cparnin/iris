@@ -27,11 +27,21 @@ export function loadEnv(): void {
     if (!line || line.startsWith("#")) continue;
     const eq = line.indexOf("=");
     if (eq <= 0) continue;
-    const key = line.slice(0, eq).trim();
+    // `export FOO=bar` is valid in a file people also source from a shell.
+    const key = line.slice(0, eq).trim().replace(/^export\s+/, "");
+    if (!key) continue;
     let value = line.slice(eq + 1).trim();
     // strip matching surrounding quotes
     if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0]) {
       value = value.slice(1, -1);
+    } else {
+      // Strip a trailing `# comment`. Only when unquoted and whitespace-
+      // separated, so a '#' inside a value (ntfy topics, passwords) survives.
+      // Without this, `NTFY_URL=https://ntfy.sh/topic  # mine` parses into a URL
+      // that still has a valid .host, so ntfyStatus() reports "configured" while
+      // every notification 404s — the silent-failure mode all over again.
+      const comment = value.search(/\s#/);
+      if (comment !== -1) value = value.slice(0, comment).trimEnd();
     }
     if (process.env[key] === undefined) process.env[key] = value;
   }

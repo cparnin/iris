@@ -1,5 +1,5 @@
 import { test, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { DeviceDetailPanel } from "./DeviceDetailPanel.js";
 import { makeDevice } from "../testDevice.js";
 import { api } from "../api.js";
@@ -56,4 +56,27 @@ test("closes when the backdrop is clicked", () => {
   render(<DeviceDetailPanel device={d} onClose={onClose} onScanned={() => {}} />);
   fireEvent.click(screen.getByLabelText("Close"));
   expect(onClose).toHaveBeenCalledOnce();
+});
+
+test("Escape closes the panel", () => {
+  // The reflex for a slide-over. Without it the only way out is the small ✕.
+  const onClose = vi.fn();
+  render(<DeviceDetailPanel device={makeDevice({ id: "x" })} onClose={onClose} onScanned={() => {}} />);
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(onClose).toHaveBeenCalled();
+});
+
+test("the forget confirmation disarms itself", async () => {
+  // onMouseLeave never fires on touch, so an armed one-tap delete would sit
+  // there indefinitely.
+  vi.useFakeTimers();
+  try {
+    render(<DeviceDetailPanel device={makeDevice({ id: "x" })} onClose={() => {}} onScanned={() => {}} />);
+    fireEvent.click(screen.getByText("Forget this device"));
+    expect(screen.getByText(/Confirm — forget/)).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(5000));
+    expect(screen.getByText("Forget this device")).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
 });

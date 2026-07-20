@@ -210,13 +210,22 @@ export async function scanNetwork(
   return { net, startedAt, finishedAt, durationMs: finishedAt - startedAt, hosts };
 }
 
-function ipToInt(ip: string): number {
+export function ipToInt(ip: string): number {
   const p = ip.split(".").map(Number);
   return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
 }
 
-/** Is `ip` within the given interface's subnet? */
-function inSubnet(ip: string, net: NetInfo): boolean {
+/**
+ * Is `ip` within the given interface's subnet?
+ *
+ * `&` yields a SIGNED int32, so both sides must be coerced unsigned — and the
+ * coercion must be parenthesized, because `>>>` binds tighter than `===`.
+ * Written as `a & mask === b & mask >>> 0`, only the right side is unsigned, so
+ * any network whose first octet is >= 128 (192.168.x, 172.16.x — i.e. most home
+ * networks) never matches, and ARP-known hosts that don't answer ICMP silently
+ * vanish from the scan. portscan.ts:assertInSubnet has the same computation.
+ */
+export function inSubnet(ip: string, net: NetInfo): boolean {
   const mask = net.netmaskBits === 0 ? 0 : (0xffffffff << (32 - net.netmaskBits)) >>> 0;
-  return (ipToInt(ip) & mask) === (ipToInt(net.ip) & mask) >>> 0;
+  return ((ipToInt(ip) & mask) >>> 0) === ((ipToInt(net.ip) & mask) >>> 0);
 }

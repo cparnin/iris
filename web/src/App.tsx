@@ -23,14 +23,23 @@ export default function App() {
   const [inspectId, setInspectId] = useState<string | null>(null);
   const [stopped, setStopped] = useState(false);
   const [confirmQuit, setConfirmQuit] = useState(false);
+  // The whole point of this dashboard is "what is on my network RIGHT NOW".
+  // Showing a stale device list as if it were live is worse than showing
+  // nothing, so a lost connection has to be visible.
+  const [connected, setConnected] = useState(true);
 
   const refresh = useCallback(async () => {
-    const [d, e] = await Promise.all([api.devices(), api.events(80)]);
-    setDevices(d.devices);
-    setLastScan(d.lastScan);
-    setScanning(d.scanning);
-    setPaused(d.paused);
-    setEvents(e.events);
+    try {
+      const [d, e] = await Promise.all([api.devices(), api.events(80)]);
+      setDevices(d.devices);
+      setLastScan(d.lastScan);
+      setScanning(d.scanning);
+      setPaused(d.paused);
+      setEvents(e.events);
+      setConnected(true);
+    } catch {
+      setConnected(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -68,6 +77,11 @@ export default function App() {
     es.addEventListener("scan:paused", (ev) => {
       setPaused((JSON.parse((ev as MessageEvent).data) as { paused: boolean }).paused);
     });
+    // EventSource reconnects on its own; onerror fires on each failed attempt.
+    // CONNECTING after an error means "retrying", which is still disconnected
+    // as far as the user is concerned.
+    es.onopen = () => setConnected(true);
+    es.onerror = () => setConnected(es.readyState === EventSource.OPEN);
     return () => es.close();
   }, [refresh]);
 
@@ -95,14 +109,38 @@ export default function App() {
     setStopped(true);
   };
 
-  const rename = async (id: string, label: string) => {
-    setDevices((ds) => ds.map((d) => (d.id === id ? { ...d, label: label || null } : d)));
-    await api.update(id, { label });
-  };
-  const trust = async (id: string, trusted: boolean) => {
-    setDevices((ds) => ds.map((d) => (d.id === id ? { ...d, trusted: trusted ? 1 : 0 } : d)));
-    await api.update(id, { trusted });
-  };
+  // Never leave "Confirm quit?" armed. On touch there's no mouseleave, so one
+  // stray tap later would kill the service.
+  useEffect(() => {
+    if (!confirmQuit) return;
+    const t = setTimeout(() => setConfirmQuit(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmQuit]);
+
+  // Optimistic, but reconciled: on failure re-read the server's truth rather
+  // than leaving the UI asserting a change that didn't persist.
+  const rename = useCallback(
+    async (id: string, label: string) => {
+      setDevices((ds) => ds.map((d) => (d.id === id ? { ...d, label: label || null } : d)));
+      try {
+        await api.update(id, { label });
+      } catch {
+        void refresh();
+      }
+    },
+    [refresh],
+  );
+  const trust = useCallback(
+    async (id: string, trusted: boolean) => {
+      setDevices((ds) => ds.map((d) => (d.id === id ? { ...d, trusted: trusted ? 1 : 0 } : d)));
+      try {
+        await api.update(id, { trusted });
+      } catch {
+        void refresh();
+      }
+    },
+    [refresh],
+  );
 
   const byId = useMemo(() => new Map(devices.map((d) => [d.id, d])), [devices]);
 
@@ -143,15 +181,31 @@ export default function App() {
           your next login. To bring Polaris back now, run this in your terminal:
         </p>
         <code className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-emerald-300">
-          launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.polaris.dashboard.plist
+          ./polaris start
         </code>
-        <p className="text-xs text-zinc-600">Then reload this page.</p>
+        <p className="text-xs text-zinc-500">Then reload this page.</p>
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+      {/* Everything below this banner is last-known state, not live state. Say
+          so loudly — a confident stale network map is this tool's worst lie. */}
+      {!connected && (
+        <div
+          role="alert"
+          className="mb-4 flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+        >
+          <span aria-hidden="true">⚠</span>
+          <span>
+            <span className="font-semibold">Disconnected from Polaris.</span> Showing the last known
+            state — it may be out of date. Retrying automatically; if it doesn't come back, run{" "}
+            <code className="rounded bg-black/30 px-1 py-0.5 text-amber-100">./polaris status</code>.
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -214,6 +268,7 @@ export default function App() {
           </button>
           <button
             onClick={confirmQuit ? quit : () => setConfirmQuit(true)}
+            onBlur={() => setConfirmQuit(false)}
             onMouseLeave={() => setConfirmQuit(false)}
             title="Stop Polaris entirely (server + dashboard)"
             className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors ${
@@ -282,7 +337,7 @@ export default function App() {
         <EventFeed events={events} byId={byId} />
       </div>
 
-      <footer className="mt-8 text-center text-xs text-zinc-600">
+      <footer className="mt-8 text-center text-xs text-zinc-500">
         Polaris · Phase 2 · Visibility + Alerts. Rename devices, mark trusted, get pinged when
         something new joins.
       </footer>

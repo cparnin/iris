@@ -36,7 +36,7 @@ export function EventFeed({
                   <span className="font-medium text-white">{name}</span>{" "}
                   <span className={m.color}>{m.verb}</span>
                 </div>
-                <div className="text-[11px] text-zinc-600">{relTime(e.ts)}</div>
+                <div className="text-[11px] text-zinc-500">{relTime(e.ts)}</div>
               </div>
             </div>
           );

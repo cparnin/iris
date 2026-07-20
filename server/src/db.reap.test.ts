@@ -83,3 +83,54 @@ test("forgetDevice removes a device and reports whether it existed", () => {
   assert.equal(db.getDeviceById(mac), undefined);
   assert.equal(db.forgetDevice(mac), false, "forgetting an unknown device reports false");
 });
+
+test("a device that drops out of the ARP cache does NOT flap offline", () => {
+  // macOS expires ARP entries in ~20 minutes, so a device sitting right there
+  // routinely reappears as `ip:<addr>` with no MAC. The sweep deleted that
+  // ghost but the surviving MAC row was never in seenIds, so it was marked
+  // offline — with a bogus event and a frozen last_seen — then flipped back on
+  // the next scan. That's the source of the near-equal online/offline event
+  // counts in the feed.
+  const ip = "192.168.4.31";
+  const mac = "aa:bb:cc:11:22:33";
+  db.applyScan([seen({ id: mac, mac, ip, hostname: "Thermostat" })], 10_000);
+  assert.equal(db.getDeviceById(mac)?.online, 1);
+
+  // Same device, same IP — but the ARP entry expired, so it arrives ip-keyed.
+  const diff = db.applyScan([seen({ id: `ip:${ip}`, ip, hostname: "Thermostat" })], 11_000);
+
+  const row = db.getDeviceById(mac);
+  assert.equal(row?.online, 1, "still online — it was literally just seen");
+  assert.equal(row?.last_seen, 11_000, "last_seen advances to this scan");
+  assert.deepEqual(diff.wentOffline, [], "no spurious offline transition");
+  assert.deepEqual(diff.newDevices, [], "the swept ghost is not reported as new");
+  assert.equal(db.getDeviceById(`ip:${ip}`), undefined, "ghost row still gets swept");
+});
+
+test("sweeping a ghost takes its events with it", () => {
+  // forgetDevice() deletes a device's events; the sweep didn't, so orphaned
+  // rows accumulated pointing at ids that no longer exist.
+  const ip = "192.168.4.32";
+  const mac = "aa:bb:cc:44:55:66";
+  db.applyScan([seen({ id: `ip:${ip}`, ip })], 20_000); // ghost + new_device event
+  const orphansBefore = db.db
+    .prepare<[string], { n: number }>("SELECT COUNT(*) AS n FROM events WHERE device_id = ?")
+    .get(`ip:${ip}`);
+  assert.ok((orphansBefore?.n ?? 0) > 0, "ghost has events to orphan");
+
+  db.applyScan([seen({ id: mac, mac, ip })], 21_000); // MAC row appears → sweep
+
+  const orphansAfter = db.db
+    .prepare<[string], { n: number }>("SELECT COUNT(*) AS n FROM events WHERE device_id = ?")
+    .get(`ip:${ip}`);
+  assert.equal(orphansAfter?.n, 0, "no events left pointing at the deleted ghost");
+});
+
+test("a device genuinely absent still goes offline", () => {
+  // The flapping fix must not make devices immortal.
+  const mac = "aa:bb:cc:77:88:99";
+  db.applyScan([seen({ id: mac, mac, ip: "192.168.4.33" })], 30_000);
+  const diff = db.applyScan([seen({ id: "ip:192.168.4.34", ip: "192.168.4.34" })], 31_000);
+  assert.ok(diff.wentOffline.includes(mac), "absent device is reported offline");
+  assert.equal(db.getDeviceById(mac)?.online, 0);
+});

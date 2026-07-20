@@ -3,6 +3,7 @@ import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { resolveCount, applyResolved } from "./config.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.POLARIS_DATA_DIR ?? join(here, "..", "..", "data");
@@ -114,7 +115,10 @@ const recentEventsStmt = db.prepare<[number], EventRow>(
  * only ever shows the most recent events, so we keep a rolling window and drop
  * the rest. Override with EVENT_RETENTION.
  */
-const MAX_EVENTS = Number(process.env.EVENT_RETENTION ?? 5000);
+// Validated: a malformed value (e.g. `EVENT_RETENTION=5000  # keep 5k`) reaches
+// SQLite as NaN and throws, and pruneEvents() runs at the top of every scan —
+// so one bad line means no scan ever completes and no alert ever fires.
+const MAX_EVENTS = applyResolved(resolveCount("EVENT_RETENTION", process.env.EVENT_RETENTION, 5000));
 const pruneEventsStmt = db.prepare(
   "DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY ts DESC LIMIT ?)"
 );
@@ -125,6 +129,16 @@ export function pruneEvents(keep = MAX_EVENTS): number {
   // Fold the freed pages back into the main file so the WAL doesn't sit large.
   if (deleted > 0) db.pragma("wal_checkpoint(TRUNCATE)");
   return deleted;
+}
+
+/** Close the handle on shutdown so we don't die mid-transaction. */
+export function closeDb(): void {
+  try {
+    db.pragma("wal_checkpoint(TRUNCATE)"); // fold the WAL back into the file
+    db.close();
+  } catch {
+    // already closed, or closed under us — nothing useful to do while exiting
+  }
 }
 
 export function listDevices(): DeviceRow[] {
@@ -183,6 +197,13 @@ const savePortScanStmt = db.prepare(
 );
 
 const deleteEventsForDeviceStmt = db.prepare("DELETE FROM events WHERE device_id = ?");
+
+// Prepared once at module scope like every other statement here — these two ran
+// inside applyScan, so SQLite recompiled them on every scan.
+const listOnlineStmt = db.prepare<[], DeviceRow>("SELECT * FROM devices WHERE online = 1");
+const markOfflineStmt = db.prepare("UPDATE devices SET online = 0 WHERE id = ?");
+/** Credit a sighting to a row that was seen under a different id this scan. */
+const touchDeviceStmt = db.prepare("UPDATE devices SET online = 1, last_seen = ? WHERE id = ?");
 
 /**
  * Permanently forget a device and its activity history. Useful for clearing
@@ -279,16 +300,28 @@ export const applyScan = db.transaction((seen: SeenDevice[], now: number): ScanD
   for (const dupe of findGhostDuplicates.all()) {
     if (dupe.ghost_label && !dupe.real_label) setLabelStmt.run(dupe.ghost_label, dupe.real_id);
     if (dupe.ghost_trusted && !dupe.real_trusted) setTrustedStmt.run(1, dupe.real_id);
+    deleteEventsForDeviceStmt.run(dupe.ghost_id); // else these outlive the row
     deleteDeviceStmt.run(dupe.ghost_id);
     seenIds.delete(dupe.ghost_id); // don't also mark it offline below
+
+    // The sighting belongs to the surviving row. macOS expires ARP entries in
+    // ~20 minutes, so a device that's sitting right there arrives as `ip:<addr>`
+    // with no MAC; without this the MAC row isn't in seenIds, gets marked
+    // offline with a bogus event, and flips back next scan — endless flapping.
+    if (!seenIds.has(dupe.real_id)) {
+      seenIds.add(dupe.real_id);
+      touchDeviceStmt.run(now, dupe.real_id);
+    }
+    // The ghost id is about to stop existing; don't report it as a new device.
+    const asNew = diff.newDevices.indexOf(dupe.ghost_id);
+    if (asNew !== -1) diff.newDevices.splice(asNew, 1);
   }
 
   // Anything currently online but not in this scan → mark offline.
-  const online = db.prepare<[], DeviceRow>("SELECT * FROM devices WHERE online = 1").all();
-  const markOffline = db.prepare("UPDATE devices SET online = 0 WHERE id = ?");
+  const online = listOnlineStmt.all();
   for (const dev of online) {
     if (!seenIds.has(dev.id)) {
-      markOffline.run(dev.id);
+      markOfflineStmt.run(dev.id);
       diff.wentOffline.push(dev.id);
       insertEvent.run(now, "offline", dev.id, JSON.stringify({ ip: dev.ip }));
     }

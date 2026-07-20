@@ -42,7 +42,8 @@ shows up — no router login, no agents on your devices, runs entirely on your M
   LAN, with devices clustered into Trusted / Untrusted zones. Scroll to zoom,
   drag to pan, collapse a zone, and click a device to inspect it.
 - **Port & service scan** — click a device (on the map or its card) to run an
-  opt-in `nmap -sV` scan: open ports, detected services, and risky-exposure flags
+  opt-in `nmap` scan of the top 200 ports, followed by a best-effort `-sV`
+  version probe: open ports, detected services, and risky-exposure flags
   (SMB, RDP, Telnet, VNC). Results persist and badge the map node by exposure
   (green ✓ = scanned clean, red count = risky ports) so the whole map reads as a
   live security view.
@@ -70,10 +71,13 @@ Polaris sees your entire home network, so it's built to stay yours:
 
 - macOS (uses `route`, `ifconfig`, `arp`, `ping`)
 - Node.js 20+ (built on 24)
+- **`nmap`** — optional, but port/service scanning does nothing without it.
+  Install with `brew install nmap`. Everything else (discovery, naming, the map,
+  alerts) works fine without it; the scan button just reports it's missing.
 
 ## Quick start
 
-**Production (lean — one process, ~90MB, recommended for everyday use):**
+**Production (lean — one process, ~80MB, recommended for everyday use):**
 
 ```bash
 npm install       # one npm workspace — installs server + web together
@@ -145,9 +149,9 @@ in the header to fire a test push. New devices trigger a notification automatica
 | ------------------ | ------------- | ----------------------------------------- |
 | `HOST`             | `127.0.0.1`   | Bind address (keep loopback unless auth'd)|
 | `PORT`             | `4000`        | Backend HTTP port                         |
-| `SCAN_INTERVAL_MS` | `300000`      | Auto-scan interval (5 min)                |
+| `SCAN_INTERVAL_MS` | `300000`      | Auto-scan interval (5 min). Must be 10000–2147483647; anything else falls back to the default with a warning in the log |
 | `NAME_REFRESH_EVERY`| `6`          | Full name re-resolve every Nth scan       |
-| `EVENT_RETENTION`  | `5000`        | Max activity-log rows kept (older pruned) |
+| `EVENT_RETENTION`  | `5000`        | Max activity-log rows kept (older pruned). Must be a positive integer |
 | `NTFY_URL`         | *(unset)*     | ntfy topic URL; unset = alerts off        |
 | `NTFY_TOKEN`       | *(unset)*     | ntfy bearer token (optional)              |
 | `NTFY_PRIORITY`    | `default`     | default ntfy priority                     |

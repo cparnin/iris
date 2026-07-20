@@ -29,23 +29,37 @@ function encodeReverseQuery(ip: string): Buffer {
 }
 
 /** Decode a (possibly compressed) DNS name starting at `offset`. */
+/**
+ * Read a DNS name, following compression pointers.
+ *
+ * Every read is bounds-checked against the buffer. These packets arrive from
+ * anyone who can reach the machine — the socket is bound on all interfaces —
+ * and this runs on the same single thread that serves the API and the scan
+ * loop, so a parser that spins on malformed input is a remote CPU-denial bug,
+ * not just a correctness one. Bailing out on the first out-of-range read keeps
+ * a garbage packet at O(bytes received). netbios.ts:skipName does the same.
+ */
 function readName(buf: Buffer, offset: number): [string, number] {
   const labels: string[] = [];
   let pos = offset;
   let next = -1;
   let guard = 0;
   while (guard++ < 128) {
+    if (pos < 0 || pos >= buf.length) break;
     const len = buf[pos];
     if (len === 0) {
       if (next === -1) next = pos + 1;
       break;
     }
     if ((len & 0xc0) === 0xc0) {
+      if (pos + 1 >= buf.length) break;
       const ptr = ((len & 0x3f) << 8) | buf[pos + 1];
       if (next === -1) next = pos + 2;
+      if (ptr >= buf.length || ptr === pos) break; // out of range / self-loop
       pos = ptr;
       continue;
     }
+    if (pos + 1 + len > buf.length) break; // truncated label
     labels.push(buf.toString("ascii", pos + 1, pos + 1 + len));
     pos += 1 + len;
   }
@@ -58,13 +72,17 @@ export function parsePtrAnswer(buf: Buffer): string | null {
   const qd = buf.readUInt16BE(4);
   const an = buf.readUInt16BE(6);
   let pos = 12;
-  for (let i = 0; i < qd; i++) {
+  // Trust qdcount/ancount only as far as the buffer goes. A 12-byte packet
+  // claiming qdcount=65535 otherwise costs 110ms of event loop — ~9 of those a
+  // second pins the process that also serves the dashboard.
+  for (let i = 0; i < qd && pos < buf.length; i++) {
     const [, after] = readName(buf, pos);
     pos = after + 4; // qtype + qclass
   }
-  for (let i = 0; i < an && pos < buf.length; i++) {
+  for (let i = 0; i < an && pos + 10 <= buf.length; i++) {
     const [, after] = readName(buf, pos);
     pos = after;
+    if (pos + 10 > buf.length) break; // truncated RR header
     const type = buf.readUInt16BE(pos);
     const rdlen = buf.readUInt16BE(pos + 8);
     pos += 10; // type(2) class(2) ttl(4) rdlength(2)

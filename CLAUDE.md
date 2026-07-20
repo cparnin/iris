@@ -4,9 +4,10 @@ Home-network visibility + security tool. Discovers every device on the LAN,
 names them, maps the topology, and port-scans them for risky exposure.
 Runs entirely on the user's Mac. No cloud, no telemetry.
 
-> **The app is Polaris. The folder may still be named `iris`** — the app was
-> renamed (the old name collided with a work app). The folder name is cosmetic
-> and intentionally decoupled from the app identity.
+> The app was renamed from an earlier name that collided with a work app. The
+> repo and folder are now `polaris` too; the only survivors are the DB
+> rename-migration chain in `db.ts` and the legacy `com.iris.dashboard` label
+> that `uninstall-autostart.sh` still boots out. Don't reintroduce the old name.
 
 ## Commands
 
@@ -22,7 +23,7 @@ npm test           # both workspaces: server (node:test) + web (vitest)
 
 It auto-starts at login as a macOS LaunchAgent **`com.polaris.dashboard`**
 (`scripts/install-autostart.sh` → `scripts/polaris-start.sh`), running the lean
-production build: **a single ~95MB Node process on http://127.0.0.1:4000**.
+production build: **a single ~80MB Node process on http://127.0.0.1:4000**.
 
 - **`./polaris` (repo root) is the start/stop switch:**
   `./polaris` (status) · `start` · `stop` · `restart` · `rebuild` · `logs` · `open`.
@@ -63,8 +64,18 @@ No change is finished until all of these are true. Don't ask whether to do them
 - **HTTP header values must be Latin-1.** `notify.ts` runs titles through
   `headerSafe()`; an emoji in a header throws and the notification dies
   silently. Device names come off the network, so it also strips CR/LF.
-- **`SCAN_INTERVAL_MS` is validated.** A malformed value yields `NaN`, and
-  `setInterval(NaN)` coerces to 0 → back-to-back scanning forever.
+- **Env values that reach a timer or SQLite are validated in `config.ts`.**
+  `SCAN_INTERVAL_MS` needs BOTH a floor and a ceiling: `NaN` coerces to a 0ms
+  interval, and a value past 2^31-1 overflows the timer back down to 1ms — same
+  runaway, opposite end. `EVENT_RETENTION` reaching SQLite as `NaN` throws
+  inside `pruneEvents`, which runs at the TOP of every scan, so one bad line
+  means no scan ever finishes and no alert ever fires.
+- **Bitwise IP math must parenthesize the unsigned coercion.** `>>>` binds
+  tighter than `===`, so `a & mask === b & mask >>> 0` only coerces one side;
+  `&` returns a signed int32, so any network with a first octet >= 128 (i.e.
+  192.168.x and 172.16.x) never matches. That silently hid every ARP-known host
+  that doesn't answer ICMP. Correct versions: `discover.ts:inSubnet` and
+  `portscan.ts:assertInSubnet`.
 - **Browser caches the content-hashed bundle.** After a rebuild, hard-reload or
   append `?v=N`, or you'll debug stale JS.
 - **Device identity:** `id` is the MAC, falling back to `ip:<addr>` when the MAC
@@ -93,3 +104,19 @@ No change is finished until all of these are true. Don't ask whether to do them
 Binds to loopback only, rejects non-loopback `Host` headers (DNS-rebinding
 defense), and ships **no CORS** — the dashboard is same-origin. Port scans are
 opt-in, per-device, and refuse to scan outside the local subnet.
+
+Two traps that were live bugs, both in `security.ts` — read it before touching
+the middleware in `index.ts`:
+
+- **Match loopback as an ADDRESS, never a string prefix.** `startsWith("127.")`
+  also accepts the *hostname* `127.0.0.1.evil.com`, which an attacker points at
+  loopback for a same-origin read of the whole network map. `127.0.0.1.nip.io`
+  resolves publicly, so it costs them nothing. Tests pin this.
+- **No CORS is not a CSRF defense.** It stops other origins *reading* replies,
+  not *sending* simple POSTs. `/api/quit` shells out to `launchctl bootout`, so
+  an auto-submitting form on any page could kill the monitor until next login.
+  Mutating verbs go through `isSameOriginRequest` (Origin + `Sec-Fetch-Site`).
+
+Anything reachable from the network is untrusted input: validate at the
+boundary, and keep hostile-input parsing O(bytes received) — the mDNS/NetBIOS
+parsers share the single thread that serves the API.

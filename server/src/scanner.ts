@@ -24,6 +24,9 @@ export interface ScanSummary {
 
 /** Emits: "scan:start", "scan:done" (ScanSummary), "scan:error" (Error). */
 export const scanBus = new EventEmitter();
+// Each open dashboard tab subscribes 4 listeners, so the default cap of 10
+// warns at 3 tabs. These are all deliberate and cleaned up on disconnect.
+scanBus.setMaxListeners(0);
 
 // Auto-fingerprint devices the moment they appear. Off via
 // AUTOSCAN_NEW_DEVICES=0; capped so a burst of arrivals can't queue a long
@@ -174,4 +177,10 @@ export function startAutoScan(intervalMs: number): void {
       void runScan().catch((e) => console.error("[scan] periodic scan failed:", e.message));
     }
   }, intervalMs);
+}
+
+/** Stop periodic scanning (shutdown). Safe to call when not running. */
+export function stopAutoScan(): void {
+  if (timer) clearInterval(timer);
+  timer = null;
 }

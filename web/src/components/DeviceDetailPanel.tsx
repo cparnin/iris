@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Device, OpenPort, PortScanResult } from "../api.js";
 import { api, displayName } from "../api.js";
 import { deviceIcon, relTime } from "../deviceMeta.js";
@@ -27,6 +27,24 @@ export function DeviceDetailPanel({
     onScanned(); // refresh the device list
     onClose();
   };
+
+  // Disarm the destructive confirm on its own. onMouseLeave alone never fires
+  // on touch or for keyboard users, leaving a one-tap "forget" armed forever.
+  useEffect(() => {
+    if (!confirmForget) return;
+    const t = setTimeout(() => setConfirmForget(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmForget]);
+
+  // Escape closes the slide-over — it's the reflex, and its absence is felt
+  // immediately when the only other way out is hitting the small ✕.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   // Fall back to the device's last persisted scan until a fresh one runs.
   const persistedPorts = useMemo<OpenPort[]>(() => {
@@ -66,16 +84,21 @@ export function DeviceDetailPanel({
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-label={`Details for ${displayName(d)}`}>
+    <div
+      className="fixed inset-0 z-40 flex justify-end"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Details for ${displayName(d)}`}
+    >
       {/* backdrop */}
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
       <aside className="relative z-10 flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-white/10 bg-[#0b0d12] shadow-2xl">
         <header className="flex items-start justify-between gap-3 border-b border-white/10 px-5 py-4">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <span className="text-2xl">{deviceIcon(d)}</span>
-            <div>
-              <h2 className="text-base font-semibold text-white">{displayName(d)}</h2>
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-semibold text-white">{displayName(d)}</h2>
               <p className="text-xs text-zinc-500">
                 {d.ip}
                 {d.mac ? ` · ${d.mac}` : ""}
@@ -156,10 +179,10 @@ export function DeviceDetailPanel({
           )}
 
           {hasScan && d.last_portscan_at != null && !result && (
-            <p className="mt-2 text-[11px] text-zinc-600">last scanned {relTime(d.last_portscan_at)}</p>
+            <p className="mt-2 text-[11px] text-zinc-500">last scanned {relTime(d.last_portscan_at)}</p>
           )}
           {result?.scanned && (
-            <p className="mt-2 text-[11px] text-zinc-600">
+            <p className="mt-2 text-[11px] text-zinc-500">
               {ports.length} open · scanned in {(result.durationMs / 1000).toFixed(0)}s
             </p>
           )}
@@ -170,6 +193,7 @@ export function DeviceDetailPanel({
           <button
             onClick={confirmForget ? forget : () => setConfirmForget(true)}
             onMouseLeave={() => setConfirmForget(false)}
+            onBlur={() => setConfirmForget(false)}
             className={`w-full rounded-lg px-3 py-2 text-xs transition-colors ${
               confirmForget
                 ? "bg-red-500 text-white hover:bg-red-400"
@@ -178,7 +202,7 @@ export function DeviceDetailPanel({
           >
             {confirmForget ? "Confirm — forget this device?" : "Forget this device"}
           </button>
-          <p className="mt-2 text-[11px] text-zinc-600">
+          <p className="mt-2 text-[11px] text-zinc-500">
             Removes it and its history. If it's still on your network it reappears on the
             next scan.
           </p>
@@ -191,7 +215,7 @@ export function DeviceDetailPanel({
 function Fact({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-zinc-600">{label}</dt>
+      <dt className="text-xs uppercase tracking-wide text-zinc-500">{label}</dt>
       <dd className={`mt-0.5 ${accent ?? "text-zinc-200"}`}>{value}</dd>
     </div>
   );

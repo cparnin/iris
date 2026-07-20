@@ -212,7 +212,7 @@ export function NetworkMap({
               <MapBtn label="−" title="Zoom out" onClick={() => zoomBy(1 / 1.2)} />
               <MapBtn label="⤢" title="Reset view" onClick={resetView} />
             </div>
-            <span className="pointer-events-none absolute bottom-2 left-4 z-10 text-[11px] text-zinc-600">
+            <span className="pointer-events-none absolute bottom-2 left-4 z-10 text-[11px] text-zinc-500">
               scroll to zoom · drag to pan · click a device to inspect &amp; scan ports
             </span>
 

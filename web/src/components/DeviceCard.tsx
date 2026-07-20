@@ -101,20 +101,24 @@ export function DeviceCard({ device: d, isNew, onRename, onTrust }: Props) {
               {d.os_guess}
             </div>
           )}
-          <div className="mt-2 flex items-center gap-2 font-mono text-[10px] text-zinc-600">
+          <div className="mt-2 flex items-center gap-2 font-mono text-[10px] text-zinc-500">
             <span>{d.mac ?? "no mac"}</span>
           </div>
-          <div className="mt-0.5 text-[10px] text-zinc-600">
+          <div className="mt-0.5 text-[10px] text-zinc-500">
             {online ? "online now" : `last seen ${relTime(d.last_seen)}`}
           </div>
         </div>
         <button
           onClick={() => onTrust(d.id, d.trusted === 0)}
+          aria-label={d.trusted ? `Untrust ${displayName(d)}` : `Mark ${displayName(d)} as trusted`}
           title={d.trusted ? "Trusted device" : "Mark as trusted"}
+          // Reveal on focus and on touch too, not just hover: opacity-0 alone
+          // leaves a focusable-but-invisible control for keyboard users, and
+          // makes "trust" unreachable entirely on a phone.
           className={`shrink-0 rounded-md px-2 py-1 text-xs transition-colors ${
             d.trusted
               ? "bg-emerald-500/15 text-emerald-300"
-              : "bg-white/5 text-zinc-500 opacity-0 group-hover:opacity-100 hover:bg-white/10"
+              : "bg-white/5 text-zinc-400 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 hover:bg-white/10 max-sm:opacity-100"
           }`}
         >
           {d.trusted ? "✓ trusted" : "trust"}
@@ -163,7 +167,7 @@ export function DeviceCard({ device: d, isNew, onRename, onTrust }: Props) {
             )}
 
             {!scan.message && (
-              <div className="text-[10px] text-zinc-600">
+              <div className="text-[10px] text-zinc-500">
                 {scan.ports.length} open · {(scan.durationMs / 1000).toFixed(0)}s
               </div>
             )}

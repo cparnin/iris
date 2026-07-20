@@ -4,8 +4,10 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isLoopbackHost } from "./security.js";
+import { isLoopbackHost, isSameOriginRequest } from "./security.js";
+import { resolveInterval, applyResolved } from "./config.js";
 import {
+  closeDb,
   listDevices,
   recentEvents,
   setLabel,
@@ -22,6 +24,7 @@ import {
   isPaused,
   setPaused,
   getLastSummary,
+  stopAutoScan,
   scanBus,
   type ScanSummary,
 } from "./scanner.js";
@@ -31,18 +34,8 @@ const PORT = Number(process.env.PORT ?? 4000);
 // Bind to loopback by default: the API exposes your full device inventory, so
 // it must NOT be reachable from the LAN. Override HOST only if you know why.
 const HOST = process.env.HOST ?? "127.0.0.1";
-// Guard the interval: a malformed value (e.g. a mangled .env line) would yield
-// NaN, and setInterval(NaN) coerces to 0 — scanning back-to-back forever. Fall
-// back to the default and never allow a punishing sub-10s cadence.
-const DEFAULT_SCAN_INTERVAL_MS = 300_000;
-const rawInterval = Number(process.env.SCAN_INTERVAL_MS);
-const SCAN_INTERVAL_MS =
-  Number.isFinite(rawInterval) && rawInterval >= 10_000 ? rawInterval : DEFAULT_SCAN_INTERVAL_MS;
-if (process.env.SCAN_INTERVAL_MS !== undefined && SCAN_INTERVAL_MS !== rawInterval) {
-  console.warn(
-    `[config] ignoring invalid SCAN_INTERVAL_MS=${JSON.stringify(process.env.SCAN_INTERVAL_MS)}; using ${SCAN_INTERVAL_MS}ms`
-  );
-}
+// Guard the interval at both ends — see resolveInterval in ./config.ts.
+const SCAN_INTERVAL_MS = applyResolved(resolveInterval(process.env.SCAN_INTERVAL_MS));
 
 const app = express();
 
@@ -63,7 +56,37 @@ app.use((req, res, next) => {
   res.status(403).json({ error: "Forbidden: request Host is not a loopback address" });
 });
 
+// The Host check above is not a CSRF defense and doesn't claim to be. Shipping
+// no CORS stops other origins from READING our responses, but a plain
+// auto-submitting form still SENDS a simple POST — and /api/quit shells out to
+// `launchctl bootout`, so any page you visit could kill the monitor until your
+// next login. Mutating verbs additionally require a same-origin (or absent)
+// Origin. GET/HEAD are exempt: they're already covered by Host + no-CORS.
+app.use((req, res, next) => {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+    next();
+    return;
+  }
+  const site = req.headers["sec-fetch-site"];
+  if (
+    isSameOriginRequest(
+      {
+        origin: req.headers.origin,
+        secFetchSite: Array.isArray(site) ? site[0] : site,
+      },
+      EXTRA_HOSTS,
+    )
+  ) {
+    next();
+    return;
+  }
+  res.status(403).json({ error: "Forbidden: cross-site request" });
+});
+
 app.use(express.json());
+
+/** Device labels are user-set and rendered everywhere; keep them line-sized. */
+const MAX_LABEL_LEN = 120;
 
 // Label for the upstream tier on the map — set ISP_NAME=Frontier to name yours.
 const ISP_NAME = process.env.ISP_NAME?.trim() || "Internet / ISP";
@@ -137,7 +160,10 @@ app.get("/api/devices", (_req, res) => {
 });
 
 app.get("/api/events", (req, res) => {
-  const limit = Math.min(Number(req.query.limit ?? 100), 500);
+  // Needs a floor and a NaN guard, not just a cap: `?limit=-1` becomes SQL
+  // `LIMIT -1`, which is unbounded and dumps the entire retention window, and
+  // `?limit=abc` reaches SQLite as NaN and throws "datatype mismatch".
+  const limit = Math.min(Math.max(Math.trunc(Number(req.query.limit)) || 100, 1), 500);
   res.json({ events: recentEvents(limit) });
 });
 
@@ -157,7 +183,17 @@ app.post("/api/scan", async (_req, res) => {
 app.patch("/api/devices/:id", (req, res) => {
   const { id } = req.params;
   const { label, trusted } = req.body ?? {};
-  if (label !== undefined) setLabel(id, label === "" ? null : label);
+  // A non-string label reaches SQLite as an unbindable value and throws; an
+  // unbounded one lets a caller store megabytes on a row we render in every list.
+  if (label !== undefined && label !== null && typeof label !== "string") {
+    res.status(400).json({ error: "label must be a string" });
+    return;
+  }
+  if (typeof label === "string" && label.length > MAX_LABEL_LEN) {
+    res.status(400).json({ error: `label must be ${MAX_LABEL_LEN} characters or fewer` });
+    return;
+  }
+  if (label !== undefined) setLabel(id, label === "" || label === null ? null : label);
   if (trusted !== undefined) setTrusted(id, Boolean(trusted));
   res.json({ ok: true });
 });
@@ -242,10 +278,50 @@ if (servingUI) {
   app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(join(WEB_DIST, "index.html")));
 }
 
-app.listen(PORT, HOST, () => {
+// Terminal error handler. Without this, Express's development handler (NODE_ENV
+// is unset under launchd) answers any thrown route error with a full stack
+// trace and absolute filesystem paths.
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("[api] unhandled route error:", err.message);
+  if (!res.headersSent) res.status(500).json({ error: "Internal error" });
+});
+
+const server = app.listen(PORT, HOST, () => {
   console.log(`\n  Polaris server → http://${HOST}:${PORT}`);
   console.log(`  Dashboard: ${servingUI ? `http://${HOST}:${PORT}` : "run `npm run dev` (Vite on :5173)"}`);
   console.log(`  Auto-scanning every ${Math.round(SCAN_INTERVAL_MS / 1000)}s`);
   console.log(`  ntfy notifications: ${isNtfyConfigured() ? "on" : "off (set NTFY_URL)"}\n`);
   startAutoScan(SCAN_INTERVAL_MS);
 });
+
+// An unhandled rejection is FATAL by default in Node 24. This process runs
+// under launchd with KeepAlive, so a crash is silently respawned and looks like
+// nothing happened — the worst way to lose a background monitor. Log and carry
+// on: a failed scan is not a reason to take down the daemon.
+process.on("unhandledRejection", (reason) => {
+  console.error("[fatal] unhandled rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[fatal] uncaught exception:", err);
+});
+
+// Shut down cleanly on `./polaris stop|restart` so the SQLite handle is closed
+// and in-flight requests drain, instead of being killed mid-transaction.
+let shuttingDown = false;
+for (const sig of ["SIGTERM", "SIGINT"] as const) {
+  process.on(sig, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n[shutdown] ${sig} — stopping Polaris`);
+    stopAutoScan();
+    server.close(() => {
+      closeDb();
+      process.exit(0);
+    });
+    // Don't hang forever on a held-open SSE connection.
+    setTimeout(() => {
+      closeDb();
+      process.exit(0);
+    }, 3000).unref();
+  });
+}
