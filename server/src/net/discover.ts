@@ -219,11 +219,21 @@ async function reverseDns(ip: string): Promise<string | null> {
   try {
     // dns.reverse has no built-in timeout and can hang on hosts with no PTR;
     // cap it so a few slow lookups can't stretch out the whole scan.
-    const names = await Promise.race([
-      dns.reverse(ip),
-      new Promise<string[]>((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
-    ]);
-    return names[0]?.replace(/\.$/, "") ?? null;
+    // The timeout handle must be cleared when the lookup wins, or every
+    // resolved host leaves a live 2s timer holding its closure — up to one per
+    // host, per scan.
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const names = await Promise.race([
+        dns.reverse(ip),
+        new Promise<string[]>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("timeout")), 2000);
+        }),
+      ]);
+      return names[0]?.replace(/\.$/, "") ?? null;
+    } finally {
+      clearTimeout(timer);
+    }
   } catch {
     return null;
   }

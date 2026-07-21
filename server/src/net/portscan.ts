@@ -34,13 +34,18 @@ export interface PortScanResult {
 }
 
 /** Is nmap on PATH? */
+/**
+ * Memoized: this spawned an `nmap --version` subprocess on every single port
+ * scan, including each auto-scan of a new device. nmap doesn't get installed
+ * or uninstalled while we're running, and if it does, a restart picks it up.
+ */
+let nmapPresent: Promise<boolean> | null = null;
 export async function nmapAvailable(): Promise<boolean> {
-  try {
-    await pexec("nmap", ["--version"], { timeout: 5000 });
-    return true;
-  } catch {
-    return false;
-  }
+  nmapPresent ??= pexec("nmap", ["--version"], { timeout: 5000 }).then(
+    () => true,
+    () => false,
+  );
+  return nmapPresent;
 }
 
 /**
