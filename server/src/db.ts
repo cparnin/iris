@@ -72,6 +72,9 @@ addColumnIfMissing("devices", "os_guess", "TEXT");
 addColumnIfMissing("devices", "open_ports", "TEXT"); // JSON array of OpenPort
 addColumnIfMissing("devices", "risk_count", "INTEGER");
 addColumnIfMissing("devices", "last_portscan_at", "INTEGER");
+// Consecutive scans a device has been missing. A device isn't declared offline
+// on the first miss — see MISSES_BEFORE_OFFLINE in applyScan.
+addColumnIfMissing("devices", "missed_scans", "INTEGER NOT NULL DEFAULT 0");
 
 export interface DeviceRow {
   id: string;
@@ -91,6 +94,7 @@ export interface DeviceRow {
   open_ports: string | null; // JSON array of OpenPort, or null if never scanned
   risk_count: number | null;
   last_portscan_at: number | null;
+  missed_scans: number | null;
 }
 
 export interface EventRow {
@@ -201,9 +205,25 @@ const deleteEventsForDeviceStmt = db.prepare("DELETE FROM events WHERE device_id
 // Prepared once at module scope like every other statement here — these two ran
 // inside applyScan, so SQLite recompiled them on every scan.
 const listOnlineStmt = db.prepare<[], DeviceRow>("SELECT * FROM devices WHERE online = 1");
-const markOfflineStmt = db.prepare("UPDATE devices SET online = 0 WHERE id = ?");
+const markOfflineStmt = db.prepare(
+  "UPDATE devices SET online = 0, missed_scans = 0 WHERE id = ?"
+);
 /** Credit a sighting to a row that was seen under a different id this scan. */
-const touchDeviceStmt = db.prepare("UPDATE devices SET online = 1, last_seen = ? WHERE id = ?");
+const touchDeviceStmt = db.prepare(
+  "UPDATE devices SET online = 1, missed_scans = 0, last_seen = ? WHERE id = ?"
+);
+/** Record another consecutive miss without yet declaring the device offline. */
+const bumpMissedStmt = db.prepare("UPDATE devices SET missed_scans = ? WHERE id = ?");
+
+/**
+ * How many scans in a row a device must be missing before it counts as gone.
+ *
+ * 2 means a device has to vanish twice running (~10 min at the default
+ * cadence). One missed scan is usually a dozing phone or a Wi-Fi hiccup, and
+ * acting on it generated an offline event plus an online event minutes later,
+ * over and over.
+ */
+const MISSES_BEFORE_OFFLINE = 2;
 
 /**
  * Permanently forget a device and its activity history. Useful for clearing
@@ -239,6 +259,7 @@ const upsertDevice = db.prepare(`
     is_self    = excluded.is_self,
     randomized = excluded.randomized,
     online     = 1,
+    missed_scans = 0,
     last_seen  = excluded.last_seen
 `);
 
@@ -317,10 +338,23 @@ export const applyScan = db.transaction((seen: SeenDevice[], now: number): ScanD
     if (asNew !== -1) diff.newDevices.splice(asNew, 1);
   }
 
-  // Anything currently online but not in this scan → mark offline.
+  // Anything currently online but not in this scan → mark offline, but only
+  // after it's been missed MISSES_BEFORE_OFFLINE scans in a row.
+  //
+  // One missed scan means very little: a phone dozing, a Wi-Fi hiccup, the
+  // first scan after the laptop wakes and the radio hasn't reassociated. Acting
+  // on it produced an offline event and an online event a few minutes later,
+  // forever — which is most of what was filling the activity feed. Requiring a
+  // repeat costs one scan interval of latency on a genuine departure and
+  // removes nearly all the noise.
   const online = listOnlineStmt.all();
   for (const dev of online) {
     if (!seenIds.has(dev.id)) {
+      const misses = (dev.missed_scans ?? 0) + 1;
+      if (misses < MISSES_BEFORE_OFFLINE) {
+        bumpMissedStmt.run(misses, dev.id);
+        continue; // still counts as online for now
+      }
       markOfflineStmt.run(dev.id);
       diff.wentOffline.push(dev.id);
       insertEvent.run(now, "offline", dev.id, JSON.stringify({ ip: dev.ip }));

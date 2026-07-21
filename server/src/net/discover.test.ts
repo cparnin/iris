@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { inSubnet, ipToInt, isNonHostMac, isNetworkOrBroadcast } from "./discover.js";
+import { inSubnet, ipToInt, isNonHostMac, isNetworkOrBroadcast, lanUnusableReason } from "./discover.js";
 import type { NetInfo } from "./subnet.js";
 
 const net = (ip: string, bits: number): NetInfo => ({
@@ -64,4 +64,21 @@ test("isNetworkOrBroadcast excludes the reserved pair, not real hosts", () => {
   assert.equal(isNetworkOrBroadcast("192.168.4.255", net("192.168.4.1", 22)), false);
   assert.equal(isNetworkOrBroadcast("192.168.1.255", net("192.168.1.1", 24)), true);
   assert.equal(isNetworkOrBroadcast("192.168.1.10", net("192.168.1.1", 32)), false, "/32 has no pair");
+});
+
+test("lanUnusableReason rejects VPN tunnels and /32 default routes", () => {
+  // A full-tunnel VPN takes the default route and reports a /32 on utun. The
+  // sweep would find exactly one address, so every device on the real LAN would
+  // be marked offline — a whole-inventory false alarm every time you connect.
+  assert.ok(lanUnusableReason({ ...net("10.8.0.2", 32), iface: "utun4" }), "utun /32");
+  assert.ok(lanUnusableReason({ ...net("10.8.0.2", 24), iface: "utun4" }), "utun even with a real mask");
+  assert.ok(lanUnusableReason({ ...net("192.168.1.5", 32), iface: "en0" }), "/32 on a real iface");
+  assert.ok(lanUnusableReason({ ...net("192.168.1.5", 30), iface: "en0" }), "/30 is too small");
+  assert.ok(lanUnusableReason({ ...net("10.8.0.2", 24), iface: "ppp0" }), "dial-up/PPP tunnel");
+});
+
+test("lanUnusableReason allows ordinary home networks", () => {
+  assert.equal(lanUnusableReason({ ...net("192.168.1.10", 24), iface: "en0" }), null);
+  assert.equal(lanUnusableReason({ ...net("192.168.4.30", 22), iface: "en0" }), null);
+  assert.equal(lanUnusableReason({ ...net("10.0.0.5", 8), iface: "en1" }), null);
 });

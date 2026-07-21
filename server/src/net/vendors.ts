@@ -3,8 +3,26 @@ import ouiDb from "./oui-db.json" with { type: "json" };
 
 const DB = ouiDb as Record<string, string>;
 
-/** Normalize a MAC to 12 uppercase hex chars, or null if invalid. */
+/**
+ * Normalize a MAC to 12 uppercase hex chars, or null if invalid.
+ *
+ * Handles octets with their leading zero stripped, because that's what macOS
+ * `arp -an` actually prints: `44:7:b:e5:19:84`, `c:83:cc:18:57:fa`. Stripping
+ * separators and demanding exactly 12 hex chars rejects those — which silently
+ * threw away the MAC for any device with a low-valued octet (roughly a third of
+ * a real network). Those devices then had no stable identity and were stored as
+ * `ip:<addr>` rows, which is where most "ghost duplicates" came from.
+ */
 export function normalizeMac(mac: string): string | null {
+  const parts = mac.trim().split(/[:\-]/);
+  if (parts.length > 1) {
+    // Colon/dash notation: must be exactly six 1–2 digit hex octets. Anything
+    // else is malformed, even if the loose hex count below would accept it
+    // (e.g. "44:777:b:e5:19:84" and a seven-octet string are both 12 hex chars).
+    if (parts.length !== 6 || !parts.every((p) => /^[0-9a-fA-F]{1,2}$/.test(p))) return null;
+    return parts.map((p) => p.padStart(2, "0")).join("").toUpperCase();
+  }
+  // Dotted (aabb.ccdd.eeff) and bare 12-char forms.
   const hex = mac.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
   if (hex.length !== 12) return null;
   return hex;

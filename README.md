@@ -19,8 +19,11 @@ shows up — no router login, no agents on your devices, runs entirely on your M
 
 ## What it does
 
-- **Fast discovery** — parallel ICMP ping-sweep + ARP-cache read across your whole
-  subnet. A /24 in ~2s, a /22 in ~8s. No `sudo`.
+- **Fast discovery** — ARP-first sweep across your whole subnet: one UDP socket
+  nudges every address so the kernel resolves its MAC, then Polaris reads the ARP
+  table. A /22 in ~2.5s, no `sudo`, and no subprocesses. It finds devices that
+  ignore ICMP entirely — Windows boxes behind the default firewall, locked-down
+  IoT gear — which a ping sweep misses.
 - **Real device names** — resolves friendly names from four sources so fewer
   devices show up generic: mDNS **service discovery** (Chromecast/Nest, Apple TV,
   Sonos, HomeKit, printers), reverse **mDNS** `.local` names, **NetBIOS** machine

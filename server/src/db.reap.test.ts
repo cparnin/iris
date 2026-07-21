@@ -127,10 +127,43 @@ test("sweeping a ghost takes its events with it", () => {
 });
 
 test("a device genuinely absent still goes offline", () => {
-  // The flapping fix must not make devices immortal.
+  // The flapping fix must not make devices immortal — it only delays the call
+  // by one scan (see MISSES_BEFORE_OFFLINE).
   const mac = "aa:bb:cc:77:88:99";
   db.applyScan([seen({ id: mac, mac, ip: "192.168.4.33" })], 30_000);
-  const diff = db.applyScan([seen({ id: "ip:192.168.4.34", ip: "192.168.4.34" })], 31_000);
+  const elsewhere = [seen({ id: "ip:192.168.4.34", ip: "192.168.4.34" })];
+  db.applyScan(elsewhere, 31_000); // first miss: forgiven
+  const diff = db.applyScan(elsewhere, 32_000); // second: real
   assert.ok(diff.wentOffline.includes(mac), "absent device is reported offline");
   assert.equal(db.getDeviceById(mac)?.online, 0);
+});
+
+test("one missed scan does not take a device offline", () => {
+  // A dozing phone or a Wi-Fi hiccup shouldn't write an offline event and then
+  // an online event minutes later, forever. That churn was most of the feed.
+  const mac = "aa:bb:cc:aa:aa:01";
+  const other = "aa:bb:cc:aa:aa:02";
+  db.applyScan([seen({ id: mac, mac, ip: "192.168.4.60" }), seen({ id: other, mac: other, ip: "192.168.4.61" })], 40_000);
+
+  const miss1 = db.applyScan([seen({ id: other, mac: other, ip: "192.168.4.61" })], 41_000);
+  assert.equal(miss1.wentOffline.includes(mac), false, "first miss is forgiven");
+  assert.equal(db.getDeviceById(mac)?.online, 1, "still shown as online");
+
+  const miss2 = db.applyScan([seen({ id: other, mac: other, ip: "192.168.4.61" })], 42_000);
+  assert.ok(miss2.wentOffline.includes(mac), "second consecutive miss is real");
+  assert.equal(db.getDeviceById(mac)?.online, 0);
+});
+
+test("reappearing before the second miss clears the strike", () => {
+  const mac = "aa:bb:cc:aa:aa:03";
+  const other = "aa:bb:cc:aa:aa:04";
+  const both = [seen({ id: mac, mac, ip: "192.168.4.62" }), seen({ id: other, mac: other, ip: "192.168.4.63" })];
+  db.applyScan(both, 50_000);
+  db.applyScan([both[1]], 51_000); // missed once
+  db.applyScan(both, 52_000); // back
+  assert.equal(db.getDeviceById(mac)?.missed_scans, 0, "strike reset on sighting");
+
+  // So the next single miss is again forgiven rather than counting as the 2nd.
+  const diff = db.applyScan([both[1]], 53_000);
+  assert.equal(diff.wentOffline.includes(mac), false, "counter restarted, not carried over");
 });

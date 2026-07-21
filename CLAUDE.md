@@ -81,6 +81,17 @@ No change is finished until all of these are true. Don't ask whether to do them
 - **Device identity:** `id` is the MAC, falling back to `ip:<addr>` when the MAC
   isn't in the ARP cache yet. That produces duplicate "ghost" rows, so
   `applyScan` sweeps `ip:` rows that duplicate a MAC row at the same IP.
+- **macOS `arp -an` strips leading zeros per octet** (`44:7:b:e5:19:84`).
+  `normalizeMac` has to pad them; the old "strip separators, require 12 hex
+  chars" rejected ~a third of a real network, so those devices had no MAC, no
+  vendor, and no stable id — which is where most ghost rows came from.
+- **Discovery is ARP-first, not ping-first.** A UDP poke to each address makes
+  the kernel resolve its MAC; we then read `arp -an`. Don't reintroduce a
+  per-host ping sweep — it was 1022 subprocesses per scan on a /22 and found
+  *fewer* devices. `ping` now runs only for hosts with no OS guess yet.
+- **Scan time is dominated by naming, not discovery.** Devices that answer no
+  naming protocol must not be re-queried every scan (`triedUnnamed`); their
+  fixed mDNS/NetBIOS/DNS timeouts were most of the scan.
 - **DB is `data/polaris.sqlite`**, with a rename-migration chain from earlier
   names. Port-scan results persist on the device row (`open_ports`,
   `risk_count`, `last_portscan_at`) and never expire.

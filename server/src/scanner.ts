@@ -133,8 +133,22 @@ export async function runScan(): Promise<ScanSummary> {
         if (d.hostname) knownNames.set(d.id, d.hostname);
       }
     }
+    // A device's OS family doesn't change, so once we've guessed it we never
+    // need to ping that host again — which is the only reason we still ping.
+    const knownOs = new Map<string, string>();
+    for (const d of priorDevices) {
+      if (d.os_guess) knownOs.set(d.id, d.os_guess);
+    }
+    // Devices we've already failed to name. Empty on a refresh scan, so they do
+    // get retried periodically — just not every five minutes forever.
+    const triedUnnamed = new Set<string>();
+    if (!refreshNames) {
+      for (const d of priorDevices) {
+        if (!d.hostname) triedUnnamed.add(d.id);
+      }
+    }
 
-    const result = await scanNetwork(knownNames);
+    const result = await scanNetwork({ knownNames, knownOs, triedUnnamed });
     const now = result.finishedAt;
     const diff = applyScan(toSeen(result), now);
     pruneEvents(); // keep the activity log (and the SQLite WAL) bounded
@@ -166,15 +180,30 @@ export async function runScan(): Promise<ScanSummary> {
   }
 }
 
+/**
+ * Log a failed scan, quietly when it's an expected condition.
+ *
+ * Being on a VPN isn't an error — it's a normal state where we can't see the
+ * LAN. Logging it as a failure every 5 minutes would train you to ignore the
+ * log, which is where the real failures show up.
+ */
+function logScanFailure(kind: string, err: Error): void {
+  if (err.name === "NotOnLanError") {
+    console.log(`[scan] ${err.message}`);
+    return;
+  }
+  console.error(`[scan] ${kind} scan failed:`, err.message);
+}
+
 let timer: NodeJS.Timeout | null = null;
 
 /** Start periodic scanning every `intervalMs`, running one immediately. */
 export function startAutoScan(intervalMs: number): void {
   if (timer) clearInterval(timer);
-  void runScan().catch((e) => console.error("[scan] initial scan failed:", e.message));
+  void runScan().catch((e) => logScanFailure("initial", e));
   timer = setInterval(() => {
     if (!scanning && !paused) {
-      void runScan().catch((e) => console.error("[scan] periodic scan failed:", e.message));
+      void runScan().catch((e) => logScanFailure("periodic", e));
     }
   }, intervalMs);
 }

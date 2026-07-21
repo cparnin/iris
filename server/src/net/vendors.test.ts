@@ -32,3 +32,22 @@ test("lookupVendor labels an unknown randomized MAC", () => {
 test("lookupVendor returns null for an unknown, non-randomized MAC", () => {
   assert.equal(lookupVendor("f4:00:00:00:00:01"), null);
 });
+
+test("normalizeMac handles macOS arp output with leading zeros stripped", () => {
+  // `arp -an` prints 44:7:b:e5:19:84, not 44:07:0b:e5:19:84. Stripping
+  // separators and requiring 12 hex chars rejected these outright, so any
+  // device with a low-valued octet lost its MAC — and with it its identity.
+  assert.equal(normalizeMac("44:7:b:e5:19:84"), "44070BE51984");
+  assert.equal(normalizeMac("c:83:cc:18:57:fa"), "0C83CC1857FA");
+  assert.equal(normalizeMac("5c:62:8b:a3:ac:0"), "5C628BA3AC00");
+  assert.equal(normalizeMac("0:0:0:0:0:1"), "000000000001");
+  assert.equal(normalizeMac("1:0:5e:0:0:fb"), "01005E0000FB", "multicast still parses");
+});
+
+test("normalizeMac still rejects genuinely malformed input", () => {
+  assert.equal(normalizeMac("44:7:b:e5:19"), null, "only five octets");
+  assert.equal(normalizeMac("44:7:b:e5:19:84:99"), null, "seven octets");
+  assert.equal(normalizeMac("zz:7:b:e5:19:84"), null, "non-hex");
+  assert.equal(normalizeMac("44:777:b:e5:19:84"), null, "three-digit octet");
+  assert.equal(normalizeMac(""), null);
+});
