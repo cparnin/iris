@@ -158,3 +158,39 @@ test("zone collapse toggles are focusable and keyboard-operable", () => {
   fireEvent.keyDown(toggle, { key: "Enter" });
   expect(screen.getByRole("button", { name: /Expand Trusted/i })).toBeInTheDocument();
 });
+
+test("offline devices are hidden by default but can be shown", () => {
+  // They used to be dropped entirely, so an unplugged camera was simply absent
+  // with no way to tell that from "this device never existed".
+  render(
+    <NetworkMap
+      devices={[
+        makeDevice({ id: "gw", is_gateway: 1, hostname: "eero", online: 1, ip: "192.168.4.1" }),
+        makeDevice({ id: "cam", hostname: "Nest-Cam", online: 0, ip: "192.168.4.31" }),
+      ]}
+    />
+  );
+  expect(screen.queryByText("Nest-Cam")).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /show offline/i }));
+  expect(screen.getByText("Nest-Cam")).toBeInTheDocument();
+  // ...and it must be announced as offline, not silently mixed in with live ones.
+  expect(screen.getByRole("button", { name: /Nest-Cam.*offline/i })).toBeInTheDocument();
+});
+
+test("devices can be grouped by what they are instead of trust", () => {
+  render(
+    <NetworkMap
+      devices={[
+        makeDevice({ id: "gw", is_gateway: 1, hostname: "eero", online: 1, ip: "192.168.4.1" }),
+        makeDevice({ id: "pc", label: "dell xps", vendor: "Intel Corporate", online: 1, ip: "192.168.4.59" }),
+        makeDevice({ id: "bulb", label: "bathroom bulb", vendor: "Espressif Inc.", online: 1, ip: "192.168.4.44" }),
+      ]}
+    />
+  );
+  expect(screen.getByText("Trusted")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /by trust/i }));
+  expect(screen.getByText("Computers & phones")).toBeInTheDocument();
+  expect(screen.getByText("Smart home")).toBeInTheDocument();
+});

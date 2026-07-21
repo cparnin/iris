@@ -25,14 +25,17 @@ function groupKeyOf(d: Device): "trusted" | "untrusted" {
   return d.is_self || d.trusted === 1 ? "trusted" : "untrusted";
 }
 
-const W = 900;
+/** Floor for the canvas width; it grows with the total width of the zones. */
+const W_MIN = 900;
 /** Floor for the canvas height; the real height grows with the tallest zone. */
 const H_MIN = 640;
-const CX = W / 2;
+
 
 const INTERNET_Y = 48;
 const GATEWAY_Y = 158;
 const GROUPS_TOP = 250;
+/** Where the "inside your network" line sits, between gateway and the zones. */
+const BOUNDARY_Y = 212;
 
 // Device cell + group box geometry.
 const CELL_W = 92;
@@ -42,8 +45,36 @@ const HEADER_H = 38;
 const BOX_PAD = 12;
 const GROUP_GAP = 40;
 
+/**
+ * Grouping by what a device IS, as an alternative to whether you trust it.
+ * Trust answers "should I worry"; kind answers "what am I looking at" — useful
+ * once a network has 20+ devices and the untrusted box is just a wall of bulbs.
+ */
+const KIND_DEFS = [
+  { key: "compute", label: "Computers & phones", color: "#a78bfa" },
+  { key: "media", label: "Speakers & displays", color: "#38bdf8" },
+  { key: "iot", label: "Smart home", color: "#fbbf24" },
+  { key: "other", label: "Other", color: "#94a3b8" },
+] as const;
+
+/** Bucket a device by vendor and OS hint — coarse on purpose. */
+function kindKeyOf(d: Device): string {
+  const v = (d.vendor ?? "").toLowerCase();
+  const name = `${d.label ?? ""} ${d.hostname ?? ""}`.toLowerCase();
+  if (d.randomized === 1 || /intel|apple|winstars|dell|samsung|microsoft/.test(v)) return "compute";
+  if (/android|iphone|pixel|laptop|macbook|desktop|pc\b/.test(name)) return "compute";
+  if (/speaker|display|\btv\b|cast|sonos|roku/.test(name)) return "media";
+  if (/sony|wnc|roku|vizio|lg electronics/.test(v)) return "media";
+  if (/google/.test(v) && /speaker|display|tv|home|mini|nest/.test(name)) return "media";
+  if (/tp-link|espressif|tuya|shelly|sonoff|resideo|honeywell|amazon|chamberlain|alpha networks/.test(v))
+    return "iot";
+  if (/bulb|light|switch|plug|thermostat|garage|door|cam|sensor|alarm/.test(name)) return "iot";
+  if (/google/.test(v)) return "media";
+  return "other";
+}
+
 interface GroupLayout {
-  key: "trusted" | "untrusted";
+  key: string;
   label: string;
   color: string;
   devices: Device[];
@@ -83,24 +114,34 @@ export function NetworkMap({
   const [hover, setHover] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [view, setView] = useState({ tx: 0, ty: 0, scale: 1 });
+  // Offline devices were hidden outright, so an unplugged camera simply wasn't
+  // on the map and there was no way to tell that from "never existed".
+  const [showOffline, setShowOffline] = useState(false);
+  const [groupBy, setGroupBy] = useState<"trust" | "kind">("trust");
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const drag = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
   const moved = useRef(false);
 
-  const { hub, groups, onlineCount, height: H } = useMemo(() => {
+  const { hub, groups, onlineCount, height: H, width: W } = useMemo(() => {
     const online = devices.filter((d) => d.online === 1);
-    const hub = online.find((d) => d.is_gateway) ?? null;
-    const spokes = online.filter((d) => d.id !== hub?.id);
+    const shown = showOffline ? devices : online;
+    const hub = shown.find((d) => d.is_gateway) ?? null;
+    const spokes = shown.filter((d) => d.id !== hub?.id);
 
-    const defs: { key: "trusted" | "untrusted"; label: string; color: string }[] = [
-      { key: "trusted", label: "Trusted", color: STATUS.trusted.ring },
-      { key: "untrusted", label: "Untrusted", color: STATUS.untrusted.ring },
-    ];
+    const defs =
+      groupBy === "kind"
+        ? KIND_DEFS
+        : [
+            { key: "trusted", label: "Trusted", color: STATUS.trusted.ring },
+            { key: "untrusted", label: "Untrusted", color: STATUS.untrusted.ring },
+          ];
 
     const built: GroupLayout[] = defs
       .map((def) => {
-        const list = spokes.filter((d) => groupKeyOf(d) === def.key);
+        const list = spokes.filter((d) =>
+          groupBy === "kind" ? kindKeyOf(d) === def.key : groupKeyOf(d) === def.key
+        );
         const isCollapsed = collapsed[def.key] ?? false;
         const cols = Math.min(MAX_COLS, Math.max(1, list.length));
         const rows = Math.ceil(list.length / cols) || 1;
@@ -110,9 +151,13 @@ export function NetworkMap({
       })
       .filter((g) => g.devices.length > 0);
 
-    // Center the row of group boxes horizontally under the gateway.
+    // Center the row of group boxes horizontally under the gateway. Grow the
+    // canvas if they don't fit — grouping by type makes four zones instead of
+    // two, which overflowed a fixed width and clipped the leftmost one.
     const totalW = built.reduce((s, g) => s + g.w, 0) + GROUP_GAP * Math.max(0, built.length - 1);
-    let gx = CX - totalW / 2;
+    const width = Math.max(W_MIN, totalW + GROUP_GAP * 2);
+    const cx = width / 2;
+    let gx = cx - totalW / 2;
     for (const g of built) {
       g.x = gx;
       gx += g.w + GROUP_GAP;
@@ -124,8 +169,8 @@ export function NetworkMap({
     const tallest = built.reduce((m, g) => Math.max(m, g.h), 0);
     const height = Math.max(H_MIN, GROUPS_TOP + tallest + BOX_PAD * 2);
 
-    return { hub, groups: built, onlineCount: online.length, height };
-  }, [devices, collapsed]);
+    return { hub, groups: built, onlineCount: online.length, height, width };
+  }, [devices, collapsed, showOffline, groupBy]);
 
   // --- pan / zoom ---------------------------------------------------------
   function toSvg(clientX: number, clientY: number): [number, number] {
@@ -170,9 +215,9 @@ export function NetworkMap({
   function zoomBy(factor: number) {
     const scale = clamp(view.scale * factor, 0.4, 4);
     // zoom around the map center
-    const worldX = (CX - view.tx) / view.scale;
+    const worldX = (W / 2 - view.tx) / view.scale;
     const worldY = (H / 2 - view.ty) / view.scale;
-    setView({ scale, tx: CX - worldX * scale, ty: H / 2 - worldY * scale });
+    setView({ scale, tx: W / 2 - worldX * scale, ty: H / 2 - worldY * scale });
   }
   const resetView = () => setView({ tx: 0, ty: 0, scale: 1 });
 
@@ -197,6 +242,20 @@ export function NetworkMap({
               </span>
             ))}
           </div>
+          <button
+            onClick={() => setGroupBy((g) => (g === "trust" ? "kind" : "trust"))}
+            title="Group devices by trust, or by what they are"
+            className="rounded-lg px-2 py-1 text-xs text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+          >
+            {groupBy === "trust" ? "by trust" : "by type"}
+          </button>
+          <button
+            onClick={() => setShowOffline((v) => !v)}
+            title="Show devices that are known but not currently online"
+            className="rounded-lg px-2 py-1 text-xs text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+          >
+            {showOffline ? "hide offline" : "show offline"}
+          </button>
           <button
             onClick={() => setOpen((o) => !o)}
             className="rounded-lg px-2 py-1 text-xs text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
@@ -236,12 +295,31 @@ export function NetworkMap({
               onPointerLeave={onPointerUp}
             >
               <g transform={`translate(${view.tx} ${view.ty}) scale(${view.scale})`}>
+                {/* The gateway is the firewall/NAT boundary — everything above
+                    this line is outside your control, everything below trusts
+                    everything else. Drawn from local facts only: naming a
+                    public IP here would mean calling a third-party service,
+                    which would break the "no outbound requests" promise. */}
+                <line
+                  x1={40}
+                  y1={BOUNDARY_Y}
+                  x2={W - 40}
+                  y2={BOUNDARY_Y}
+                  stroke="#38bdf8"
+                  strokeOpacity={0.25}
+                  strokeWidth={1}
+                  strokeDasharray="6 6"
+                />
+                <text x={48} y={BOUNDARY_Y - 7} fontSize={10} fill="#38bdf8" fillOpacity={0.75}>
+                  🛡 firewall / NAT — your LAN below
+                </text>
+
                 {/* edges: internet → gateway → each zone */}
-                <line x1={CX} y1={INTERNET_Y} x2={CX} y2={GATEWAY_Y} stroke="#ffffff" strokeOpacity={0.12} strokeWidth={1.5} />
+                <line x1={W / 2} y1={INTERNET_Y} x2={W / 2} y2={GATEWAY_Y} stroke="#ffffff" strokeOpacity={0.12} strokeWidth={1.5} />
                 {groups.map((g) => (
                   <line
                     key={`e-${g.key}`}
-                    x1={CX}
+                    x1={W / 2}
                     y1={GATEWAY_Y}
                     x2={g.x + g.w / 2}
                     y2={g.y}
@@ -252,13 +330,13 @@ export function NetworkMap({
                 ))}
 
                 {/* Internet / ISP */}
-                <TierNode x={CX} y={INTERNET_Y} icon="🌐" label={ispName} ring="#64748b" r={26} />
+                <TierNode x={W / 2} y={INTERNET_Y} icon="🌐" label={ispName} ring="#64748b" r={26} />
 
                 {/* Gateway */}
                 {hub && (
                   <DeviceNode
                     d={hub}
-                    x={CX}
+                    x={W / 2}
                     y={GATEWAY_Y}
                     r={30}
                     hover={hover}
@@ -406,7 +484,7 @@ function DeviceNode({
       className="cursor-pointer"
       role="button"
       tabIndex={0}
-      aria-label={`${name}${d.ip ? `, ${d.ip}` : ""}${
+      aria-label={`${name}${d.ip ? `, ${d.ip}` : ""}${d.online === 1 ? "" : ", offline"}${
         scan.status === "risky" ? `, ${scan.riskCount} risky ports` : ""
       } — open details`}
       onMouseEnter={() => setHover(d.id)}
@@ -429,8 +507,20 @@ function DeviceNode({
               ? " · no risky ports"
               : "")}
       </title>
-      <circle r={r} fill="#0b0d12" stroke={color} strokeWidth={active ? 3 : 2} opacity={active ? 1 : 0.9} />
-      <text textAnchor="middle" dominantBaseline="central" fontSize={r > 26 ? 26 : 20}>
+      <circle
+        r={r}
+        fill="#0b0d12"
+        stroke={color}
+        strokeWidth={active ? 3 : 2}
+        strokeDasharray={d.online === 1 ? undefined : "3 3"}
+        opacity={d.online === 1 ? (active ? 1 : 0.9) : 0.4}
+      />
+      <text
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={r > 26 ? 26 : 20}
+        opacity={d.online === 1 ? 1 : 0.45}
+      >
         {deviceIcon(d)}
       </text>
       {/* exposure badge: red count = risky ports, green ✓ = scanned clean */}
