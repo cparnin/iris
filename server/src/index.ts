@@ -24,6 +24,8 @@ import {
   isPaused,
   setPaused,
   getLastSummary,
+  guestModeRemaining,
+  setGuestMode,
   stopAutoScan,
   scanBus,
   type ScanSummary,
@@ -98,6 +100,7 @@ app.get("/api/health", (_req, res) => {
     paused: isPaused(),
     lastScan: getLastSummary(),
     ntfy: ntfyStatus(),
+    guestModeMsLeft: guestModeRemaining(),
     ispName: ISP_NAME,
   });
 });
@@ -135,6 +138,20 @@ app.post("/api/quit", (_req, res) => {
     // Fallback if bootout didn't apply (e.g. not launched by launchd).
     setTimeout(() => process.exit(0), 1500);
   }, 200);
+});
+
+// Mute new-device pushes while you have people over. Devices are still
+// discovered, recorded and shown — only the phone notification is suppressed.
+app.post("/api/guest-mode", (req, res) => {
+  // Strictly a number: `null` and `""` both coerce to 0, which would silently
+  // mean "turn it off" for a caller that meant something else entirely.
+  const hours = req.body?.hours;
+  if (typeof hours !== "number" || !Number.isFinite(hours) || hours < 0 || hours > 24) {
+    res.status(400).json({ error: "hours must be between 0 and 24" });
+    return;
+  }
+  setGuestMode(hours);
+  res.json({ ok: true, msLeft: guestModeRemaining() });
 });
 
 app.post("/api/notify/test", async (_req, res) => {

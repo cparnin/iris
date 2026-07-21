@@ -57,7 +57,7 @@ async function handleNewDevices(ids: string[]): Promise<void> {
       }
     }
 
-    if (isNtfyConfigured()) {
+    if (isNtfyConfigured() && guestModeRemaining() === 0) {
       await notifyNewDevice(dev, scan).catch((e: Error) =>
         console.error("[notify] new-device push failed:", e.message)
       );
@@ -67,11 +67,35 @@ async function handleNewDevices(ids: string[]): Promise<void> {
 
 let scanning = false;
 let paused = false;
+/**
+ * Guest mode: keep discovering and recording, just stop pushing new-device
+ * alerts until this timestamp.
+ *
+ * Per-device allowlisting can't solve this. Modern phones use randomized MACs
+ * that rotate per network and per visit, so the friend whose phone you approved
+ * last month arrives as a brand-new device today — there is no stable identity
+ * to remember. Muting for an evening is honest about that: nothing is
+ * suppressed permanently, nothing is silently trusted, and the devices still
+ * appear on the dashboard and in history.
+ */
+let guestUntil = 0;
 let lastSummary: ScanSummary | null = null;
 let scanCount = 0;
 
 export function isPaused(): boolean {
   return paused;
+}
+
+/** Milliseconds of guest mode remaining, 0 when off. */
+export function guestModeRemaining(): number {
+  return Math.max(0, guestUntil - Date.now());
+}
+
+/** Mute new-device pushes for `hours` (0 turns it off). Returns the deadline. */
+export function setGuestMode(hours: number): number {
+  guestUntil = hours > 0 ? Date.now() + hours * 3_600_000 : 0;
+  scanBus.emit("guest:changed", { until: guestUntil });
+  return guestUntil;
 }
 
 /** Pause/resume the auto-scan loop. Pure: flips the flag and announces it. */

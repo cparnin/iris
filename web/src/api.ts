@@ -76,10 +76,22 @@ export const api = {
     fetch(`/api/events?limit=${limit}`).then(json<{ events: NetEvent[] }>),
   health: () =>
     fetch("/api/health").then(
-      json<{ ok: boolean; paused: boolean; ntfy: NtfyStatus; ispName: string }>
+      json<{
+        ok: boolean;
+        paused: boolean;
+        ntfy: NtfyStatus;
+        ispName: string;
+        guestModeMsLeft: number;
+      }>
     ),
   notifyTest: () =>
     fetch("/api/notify/test", { method: "POST" }).then((r) => r.ok),
+  guestMode: (hours: number) =>
+    fetch("/api/guest-mode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hours }),
+    }).then(json<{ ok: boolean; msLeft: number }>),
   scan: () => fetch("/api/scan", { method: "POST" }).then(json<{ ok: boolean }>),
   pause: () => fetch("/api/pause", { method: "POST" }).then(json<{ ok: boolean; paused: boolean }>),
   resume: () => fetch("/api/resume", { method: "POST" }).then(json<{ ok: boolean; paused: boolean }>),

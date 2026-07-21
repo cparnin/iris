@@ -179,3 +179,35 @@ test("static file serving has no path traversal", async () => {
     assert.doesNotMatch(body, /NTFY_URL|NTFY_TOKEN/, `${path} must not serve the env file`);
   }
 });
+
+test("guest mode mutes alerts on a timer and validates its input", async () => {
+  // Guests' phones use randomized MACs, so per-device allowlisting can't work —
+  // the friend you approved last month arrives as a new device today. A
+  // time-boxed mute is the honest mechanism, so it must actually expire.
+  const on = await fetch(`${BASE}/api/guest-mode`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: BASE },
+    body: JSON.stringify({ hours: 4 }),
+  });
+  assert.equal(on.status, 200);
+  const health = await (await fetch(`${BASE}/api/health`)).json();
+  assert.ok(health.guestModeMsLeft > 3.9 * 3600_000, "roughly four hours left");
+
+  const off = await fetch(`${BASE}/api/guest-mode`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: BASE },
+    body: JSON.stringify({ hours: 0 }),
+  });
+  assert.equal(off.status, 200);
+  assert.equal((await (await fetch(`${BASE}/api/health`)).json()).guestModeMsLeft, 0);
+
+  // No permanent mute, and nothing that reaches a timer as NaN.
+  for (const hours of [-1, 99, "abc", null]) {
+    const bad = await fetch(`${BASE}/api/guest-mode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: BASE },
+      body: JSON.stringify({ hours }),
+    });
+    assert.equal(bad.status, 400, `hours=${hours} must be refused`);
+  }
+});

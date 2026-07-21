@@ -36,6 +36,9 @@ export default function App() {
   // Distinguishes "no devices" from "we haven't asked yet".
   const [loaded, setLoaded] = useState(false);
   const [naming, setNaming] = useState(false);
+  // ms of guest mode left; 0 = off. Guests' phones use randomized MACs, so each
+  // visit looks like a brand-new device and fires another push.
+  const [guestMs, setGuestMs] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -59,6 +62,7 @@ export default function App() {
       .then((h) => {
         setNtfy(h.ntfy);
         if (h.ispName) setIspName(h.ispName);
+        setGuestMs(h.guestModeMsLeft ?? 0);
       })
       .catch(() => setNtfy(null));
   }, [refresh]);
@@ -116,6 +120,25 @@ export default function App() {
       await (next ? api.pause() : api.resume());
     } catch {
       setPaused(!next); // revert on failure
+    }
+  };
+
+  // Tick the guest-mode countdown down locally so the label stays honest.
+  useEffect(() => {
+    if (guestMs <= 0) return;
+    const t = setInterval(() => setGuestMs((ms) => Math.max(0, ms - 60_000)), 60_000);
+    return () => clearInterval(t);
+  }, [guestMs]);
+
+  const toggleGuest = async () => {
+    const hours = guestMs > 0 ? 0 : 4;
+    const prev = guestMs;
+    setGuestMs(hours * 3_600_000); // optimistic
+    try {
+      const r = await api.guestMode(hours);
+      setGuestMs(r.msLeft);
+    } catch {
+      setGuestMs(prev);
     }
   };
 
@@ -277,6 +300,21 @@ export default function App() {
               {testMsg || (ntfy.configured ? "alerts on" : "alerts off")}
             </button>
           )}
+          <button
+            onClick={toggleGuest}
+            title={
+              guestMs > 0
+                ? "New-device alerts are muted. Devices are still recorded."
+                : "Having people over? Mute new-device alerts for 4 hours."
+            }
+            className={`rounded-lg px-3 py-2 text-xs transition-colors ${
+              guestMs > 0
+                ? "bg-violet-500/20 text-violet-200 hover:bg-violet-500/30"
+                : "bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            {guestMs > 0 ? `👥 Guests ${Math.ceil(guestMs / 3_600_000)}h` : "👥 Guest mode"}
+          </button>
           <button
             onClick={() => setNaming(true)}
             title="Name your devices in one list"
