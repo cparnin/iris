@@ -118,3 +118,43 @@ test("collapsing a zone hides its devices", () => {
   // zone header remains — the toggle now offers to expand it again
   expect(screen.getByLabelText("Expand Untrusted")).toBeInTheDocument();
 });
+
+test("device nodes are reachable and activatable by keyboard", () => {
+  // role="img" on the <svg> made this entire subtree presentational to assistive
+  // tech, and the nodes were clickable <g> elements with no tabIndex — so the
+  // map had zero keyboard access and the only route to a port scan was a mouse.
+  const onInspect = vi.fn();
+  render(
+    <NetworkMap
+      devices={[
+        makeDevice({ id: "gw", is_gateway: 1, hostname: "eero", online: 1, ip: "192.168.4.1" }),
+        makeDevice({ id: "tv", hostname: "Office-TV", online: 1, trusted: 1, ip: "192.168.4.7" }),
+      ]}
+      onInspect={onInspect}
+    />
+  );
+
+  const node = screen.getByRole("button", { name: /Office-TV.*192\.168\.4\.7.*open details/i });
+  expect(node).toHaveAttribute("tabindex", "0");
+
+  fireEvent.keyDown(node, { key: "Enter" });
+  expect(onInspect).toHaveBeenCalledTimes(1);
+
+  fireEvent.keyDown(node, { key: " " });
+  expect(onInspect).toHaveBeenCalledTimes(2);
+});
+
+test("zone collapse toggles are focusable and keyboard-operable", () => {
+  render(
+    <NetworkMap
+      devices={[
+        makeDevice({ id: "gw", is_gateway: 1, hostname: "eero", online: 1, ip: "192.168.4.1" }),
+        makeDevice({ id: "tv", hostname: "Office-TV", online: 1, trusted: 1, ip: "192.168.4.7" }),
+      ]}
+    />
+  );
+  const toggle = screen.getByRole("button", { name: /Collapse Trusted/i });
+  expect(toggle).toHaveAttribute("tabindex", "0");
+  fireEvent.keyDown(toggle, { key: "Enter" });
+  expect(screen.getByRole("button", { name: /Expand Trusted/i })).toBeInTheDocument();
+});

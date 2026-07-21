@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Device, PortScanResult } from "../api.js";
 import { api, displayName } from "../api.js";
 import { deviceIcon, relTime } from "../deviceMeta.js";
@@ -12,7 +12,13 @@ interface Props {
 
 export function DeviceCard({ device: d, isNew, onRename, onTrust }: Props) {
   const [editing, setEditing] = useState(false);
+  // Seeded once by useState, so a label changed server-side (or in another tab)
+  // left this holding the old text — and blurring wrote it back, silently
+  // reverting the rename. Re-seed whenever we're not actively editing.
   const [draft, setDraft] = useState(d.label ?? "");
+  useEffect(() => {
+    if (!editing) setDraft(d.label ?? "");
+  }, [d.label, editing]);
   const [scanning, setScanning] = useState(false);
   const [scan, setScan] = useState<PortScanResult | null>(null);
   const online = d.online === 1;

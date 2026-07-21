@@ -26,7 +26,8 @@ function groupKeyOf(d: Device): "trusted" | "untrusted" {
 }
 
 const W = 900;
-const H = 640;
+/** Floor for the canvas height; the real height grows with the tallest zone. */
+const H_MIN = 640;
 const CX = W / 2;
 
 const INTERNET_Y = 48;
@@ -87,7 +88,7 @@ export function NetworkMap({
   const drag = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
   const moved = useRef(false);
 
-  const { hub, groups, onlineCount } = useMemo(() => {
+  const { hub, groups, onlineCount, height: H } = useMemo(() => {
     const online = devices.filter((d) => d.online === 1);
     const hub = online.find((d) => d.is_gateway) ?? null;
     const spokes = online.filter((d) => d.id !== hub?.id);
@@ -117,7 +118,13 @@ export function NetworkMap({
       gx += g.w + GROUP_GAP;
     }
 
-    return { hub, groups: built, onlineCount: online.length };
+    // Grow the canvas to fit the tallest zone. With a fixed height, a zone with
+    // more than MAX_COLS*4 devices ran off the bottom of the viewBox: the rows
+    // existed but were unreachable, and "Reset view" put them back out of sight.
+    const tallest = built.reduce((m, g) => Math.max(m, g.h), 0);
+    const height = Math.max(H_MIN, GROUPS_TOP + tallest + BOX_PAD * 2);
+
+    return { hub, groups: built, onlineCount: online.length, height };
   }, [devices, collapsed]);
 
   // --- pan / zoom ---------------------------------------------------------
@@ -182,7 +189,7 @@ export function NetworkMap({
           <span className="text-xs text-zinc-500">{onlineCount} online</span>
         </div>
         <div className="flex items-center gap-4">
-          <div className="hidden items-center gap-3 sm:flex">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {Object.entries(STATUS).map(([k, v]) => (
               <span key={k} className="flex items-center gap-1.5 text-xs text-zinc-400">
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: v.ring }} />
@@ -220,7 +227,7 @@ export function NetworkMap({
               ref={svgRef}
               viewBox={`0 0 ${W} ${H}`}
               className="h-auto w-full cursor-grab touch-none select-none active:cursor-grabbing"
-              role="img"
+              role="group"
               aria-label={`Network map with ${onlineCount} online devices`}
               onWheel={onWheel}
               onPointerDown={onPointerDown}
@@ -283,9 +290,16 @@ export function NetworkMap({
                     <g
                       className="cursor-pointer"
                       role="button"
+                      tabIndex={0}
                       aria-label={`${g.collapsed ? "Expand" : "Collapse"} ${g.label}`}
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={() => setCollapsed((c) => ({ ...c, [g.key]: !g.collapsed }))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setCollapsed((c) => ({ ...c, [g.key]: !g.collapsed }));
+                        }
+                      }}
                     >
                       <rect x={g.x + g.w - 26} y={g.y + 10} width={18} height={18} rx={5} fill="#ffffff" fillOpacity={0.06} />
                       <text x={g.x + g.w - 17} y={g.y + 23} fontSize={13} textAnchor="middle" fill="#d4d4d8">
@@ -326,6 +340,7 @@ function MapBtn({ label, title, onClick }: { label: string; title: string; onCli
   return (
     <button
       title={title}
+      aria-label={title}
       onClick={onClick}
       className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-black/40 text-sm text-zinc-300 backdrop-blur hover:bg-white/10 hover:text-white"
     >
@@ -389,9 +404,22 @@ function DeviceNode({
     <g
       transform={`translate(${x} ${y})`}
       className="cursor-pointer"
+      role="button"
+      tabIndex={0}
+      aria-label={`${name}${d.ip ? `, ${d.ip}` : ""}${
+        scan.status === "risky" ? `, ${scan.riskCount} risky ports` : ""
+      } — open details`}
       onMouseEnter={() => setHover(d.id)}
       onMouseLeave={() => setHover(null)}
+      onFocus={() => setHover(d.id)}
+      onBlur={() => setHover(null)}
       onClick={() => onInspect(d)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onInspect(d);
+        }
+      }}
     >
       <title>
         {`${name}${d.ip ? ` · ${d.ip}` : ""}` +

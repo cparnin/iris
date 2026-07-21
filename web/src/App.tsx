@@ -8,6 +8,9 @@ import { EventFeed } from "./components/EventFeed.js";
 
 type Filter = "all" | "online" | "untrusted" | "new";
 
+/** How long a device stays flagged NEW before the badge expires on its own. */
+const NEW_BADGE_MS = 6 * 60 * 60 * 1000; // 6 hours
+
 export default function App() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [events, setEvents] = useState<NetEvent[]>([]);
@@ -16,6 +19,8 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
+  // When each device was first flagged new, so the badge can expire on its own.
+  const [newSince, setNewSince] = useState<Map<string, number>>(new Map());
   const [ntfy, setNtfy] = useState<NtfyStatus | null>(null);
   const [ispName, setIspName] = useState("Internet / ISP");
   const [testMsg, setTestMsg] = useState<string>("");
@@ -27,6 +32,8 @@ export default function App() {
   // Showing a stale device list as if it were live is worse than showing
   // nothing, so a lost connection has to be visible.
   const [connected, setConnected] = useState(true);
+  // Distinguishes "no devices" from "we haven't asked yet".
+  const [loaded, setLoaded] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -37,6 +44,7 @@ export default function App() {
       setPaused(d.paused);
       setEvents(e.events);
       setConnected(true);
+      setLoaded(true);
     } catch {
       setConnected(false);
     }
@@ -70,6 +78,11 @@ export default function App() {
       setLastScan(summary);
       if (summary.diff.newDevices.length) {
         setNewIds((prev) => new Set([...prev, ...summary.diff.newDevices]));
+        setNewSince((prev) => {
+          const next = new Map(prev);
+          for (const id of summary.diff.newDevices) next.set(id, Date.now());
+          return next;
+        });
       }
       void refresh();
     });
@@ -116,6 +129,22 @@ export default function App() {
     const t = setTimeout(() => setConfirmQuit(false), 4000);
     return () => clearTimeout(t);
   }, [confirmQuit]);
+
+  // Expire the NEW badge. It only ever accumulated, so a device stayed ringed
+  // and populated the "New" filter until you happened to reload the page —
+  // which made the badge mean "new at some point" rather than "new".
+  useEffect(() => {
+    if (newSince.size === 0) return;
+    const tick = () => {
+      const cutoff = Date.now() - NEW_BADGE_MS;
+      const survivors = [...newSince].filter(([, at]) => at > cutoff);
+      if (survivors.length === newSince.size) return; // nothing expired yet
+      setNewSince(new Map(survivors));
+      setNewIds(new Set(survivors.map(([id]) => id)));
+    };
+    const t = setInterval(tick, 30_000);
+    return () => clearInterval(t);
+  }, [newSince]);
 
   // Optimistic, but reconciled: on failure re-read the server's truth rather
   // than leaving the UI asserting a change that didn't persist.
@@ -282,7 +311,7 @@ export default function App() {
         </div>
       </header>
 
-      <StatBar devices={devices} />
+      <StatBar devices={devices} loading={!loaded} />
 
       <NetworkMap devices={devices} onInspect={(d) => setInspectId(d.id)} ispName={ispName} />
 
