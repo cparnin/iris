@@ -7,7 +7,7 @@ Runs entirely on the user's Mac. No cloud, no telemetry.
 > The app was renamed from an earlier name that collided with a work app. The
 > repo and folder are now `polaris` too; the only survivors are the DB
 > rename-migration chain in `db.ts` and the legacy `com.iris.dashboard` label
-> that `uninstall-autostart.sh` still boots out. Don't reintroduce the old name.
+> that `./polaris uninstall` still boots out. Don't reintroduce the old name.
 
 ## Commands
 
@@ -22,13 +22,13 @@ npm test           # both workspaces: server (node:test) + web (vitest)
 ## How it runs day to day
 
 It auto-starts at login as a macOS LaunchAgent **`com.polaris.dashboard`**
-(`scripts/install-autostart.sh` → `scripts/polaris-start.sh`), running the lean
+(`./polaris install` writes the plist → `scripts/polaris-start.sh`), running the lean
 production build: **a single ~80MB Node process on http://127.0.0.1:4000**.
 
 - **`./polaris` (repo root) is the start/stop switch:**
-  `./polaris` (status) · `start` · `stop` · `restart` · `rebuild` · `logs` · `open`.
-  It's the only control script — it wraps the `launchctl gui/$(id -u)/...`
-  syntax. Never call `launchctl` directly.
+  `./polaris` (status) · `start` · `stop` · `restart` · `rebuild` · `logs` ·
+  `open` · `install` · `uninstall`. It's the only control script — it wraps the
+  `launchctl gui/$(id -u)/...` syntax. Never call `launchctl` directly.
 - **Production is NOT hot-reload.** After changing code: **`./polaris rebuild`**
   (= `npm run build` + restart).
 - **Don't run `scripts/polaris-start.sh` by hand** — it's the launchd wrapper.

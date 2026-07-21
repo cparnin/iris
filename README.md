@@ -31,6 +31,7 @@ shows up — no router login, no agents on your devices, runs entirely on your M
   renamed or newly-woken devices get their name.
 - **Vendor identification** — bundled offline IEEE/Wireshark OUI database (~40k
   prefixes): Apple, Google, eero, TP-Link, Canon, Espressif, and thousands more.
+  Binary-searched from a flat file, so it costs ~1MB of memory rather than 14MB.
 - **OS hint** — coarse OS family guess (Windows / Apple·Linux·Android / Router·IoT)
   from reply TTL, so a stray Windows box stands out.
 - **Privacy-MAC detection** — flags devices using randomized MACs (modern phones).
@@ -107,11 +108,11 @@ On macOS, install a LaunchAgent so Polaris starts at login and restarts if it
 crashes. It runs the lean production build (builds once if needed):
 
 ```bash
-./scripts/install-autostart.sh     # install (once)
-./scripts/uninstall-autostart.sh   # remove entirely
+./polaris install     # install (once)
+./polaris uninstall   # remove entirely
 ```
 
-Day to day, use `./polaris` in the repo root instead of raw `launchctl`:
+Day to day, `./polaris` in the repo root is the whole interface:
 
 ```bash
 ./polaris            # is it running?
