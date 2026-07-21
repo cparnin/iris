@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { inSubnet, ipToInt } from "./discover.js";
+import { inSubnet, ipToInt, isNonHostMac, isNetworkOrBroadcast } from "./discover.js";
 import type { NetInfo } from "./subnet.js";
 
 const net = (ip: string, bits: number): NetInfo => ({
@@ -39,4 +39,29 @@ test("ipToInt is unsigned across the whole range", () => {
   assert.equal(ipToInt("0.0.0.0"), 0);
   assert.equal(ipToInt("192.168.1.1"), 3232235777);
   assert.equal(ipToInt("255.255.255.255"), 4294967295, "must not come back negative");
+});
+
+test("isNonHostMac filters broadcast and multicast pseudo-devices", () => {
+  // The ARP cache holds these next to real hosts. ff:ff:ff:ff:ff:ff at the
+  // network address fired a "new device" push notification.
+  assert.equal(isNonHostMac("ffffffffffff"), true, "broadcast");
+  assert.equal(isNonHostMac("000000000000"), true, "null");
+  assert.equal(isNonHostMac("01005e7ffffa"), true, "IPv4 multicast");
+  assert.equal(isNonHostMac("333300000001"), true, "IPv6 multicast");
+  // Real MACs must survive — including the locally-administered (randomized)
+  // ones modern phones use, which set bit 1, not bit 0, of the first octet.
+  assert.equal(isNonHostMac("48a2e6db7070"), false, "Resideo thermostat");
+  assert.equal(isNonHostMac("a0764eb67194"), false, "Espressif");
+  assert.equal(isNonHostMac("f4f5d8df5ece"), false, "Google");
+  assert.equal(isNonHostMac("aa1122334455"), false, "randomized/private MAC");
+});
+
+test("isNetworkOrBroadcast excludes the reserved pair, not real hosts", () => {
+  assert.equal(isNetworkOrBroadcast("192.168.4.0", net("192.168.4.1", 22)), true);
+  assert.equal(isNetworkOrBroadcast("192.168.7.255", net("192.168.4.1", 22)), true);
+  assert.equal(isNetworkOrBroadcast("192.168.4.44", net("192.168.4.1", 22)), false);
+  // .255 is an ordinary host inside a /22 — only the LAST address is broadcast.
+  assert.equal(isNetworkOrBroadcast("192.168.4.255", net("192.168.4.1", 22)), false);
+  assert.equal(isNetworkOrBroadcast("192.168.1.255", net("192.168.1.1", 24)), true);
+  assert.equal(isNetworkOrBroadcast("192.168.1.10", net("192.168.1.1", 32)), false, "/32 has no pair");
 });

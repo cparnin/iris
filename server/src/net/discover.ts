@@ -93,6 +93,25 @@ async function pingSweep(net: NetInfo): Promise<Map<string, number | null>> {
 }
 
 /** Read the system ARP cache: ip -> mac. Works even without root. */
+/**
+ * MACs that are addressing modes, not machines.
+ *
+ * The ARP cache holds broadcast (ff:ff:ff:ff:ff:ff) and IPv4-multicast
+ * (01:00:5e:...) entries alongside real hosts. They have to be filtered or they
+ * surface as devices and fire "new device" alerts — e.g. ff:ff:ff:ff:ff:ff at
+ * the network address. `mac` is normalized: 12 lowercase hex chars, no
+ * separators.
+ */
+export function isNonHostMac(mac: string): boolean {
+  if (mac === "ffffffffffff") return true; // broadcast
+  if (mac === "000000000000") return true; // null / unresolved
+  if (mac.startsWith("01005e")) return true; // IPv4 multicast
+  if (mac.startsWith("3333")) return true; // IPv6 multicast
+  // The low bit of the first octet is the I/G (individual/group) bit; set means
+  // multicast. Catches the rest without enumerating prefixes.
+  return (parseInt(mac.slice(0, 2), 16) & 1) === 1;
+}
+
 async function readArpTable(): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   try {
@@ -103,7 +122,7 @@ async function readArpTable(): Promise<Map<string, string>> {
       if (!m) continue;
       const ip = m[1];
       const mac = normalizeMac(m[2]);
-      if (mac) map.set(ip, formatMac(mac));
+      if (mac && !isNonHostMac(mac)) map.set(ip, formatMac(mac));
     }
   } catch {
     /* arp cache read failed — return what we have */
@@ -152,7 +171,7 @@ export async function scanNetwork(
   // Include hosts present in the ARP cache (seen via recent traffic) even if
   // they didn't answer our ICMP ping — as long as they're in our subnet.
   for (const ip of arp.keys()) {
-    if (inSubnet(ip, net) && !ttls.has(ip)) ttls.set(ip, null);
+    if (inSubnet(ip, net) && !isNetworkOrBroadcast(ip, net) && !ttls.has(ip)) ttls.set(ip, null);
   }
 
   const liveIps = [...ttls.keys()];
@@ -225,6 +244,22 @@ export function ipToInt(ip: string): number {
  * networks) never matches, and ARP-known hosts that don't answer ICMP silently
  * vanish from the scan. portscan.ts:assertInSubnet has the same computation.
  */
+/**
+ * Is this the subnet's network address or its broadcast address?
+ *
+ * Neither is a host. `hostsInSubnet` already skips them when sweeping, but the
+ * ARP fold-in comes straight from the kernel's cache, which does hold entries
+ * for them — that's how ff:ff:ff:ff:ff:ff at 192.168.4.0 became a "new device".
+ */
+export function isNetworkOrBroadcast(ip: string, net: NetInfo): boolean {
+  if (net.netmaskBits >= 31) return false; // /31 and /32 have no reserved pair
+  const mask = net.netmaskBits === 0 ? 0 : (0xffffffff << (32 - net.netmaskBits)) >>> 0;
+  const addr = ipToInt(ip);
+  const base = (ipToInt(net.ip) & mask) >>> 0;
+  const broadcast = (base | (~mask >>> 0)) >>> 0;
+  return addr === base || addr === broadcast;
+}
+
 export function inSubnet(ip: string, net: NetInfo): boolean {
   const mask = net.netmaskBits === 0 ? 0 : (0xffffffff << (32 - net.netmaskBits)) >>> 0;
   return ((ipToInt(ip) & mask) >>> 0) === ((ipToInt(net.ip) & mask) >>> 0);
