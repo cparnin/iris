@@ -19,6 +19,17 @@ export interface OpenPort {
   proto: string;
   service: string | null;
   product: string | null; // -sV product + version, when detected
+  /**
+   * True when `service` is only nmap's port-number lookup, not something it
+   * actually identified on the wire.
+   *
+   * This matters more than it sounds. nmap prints the historical registered
+   * name for a port whether or not anything confirmed it — so an eero serving
+   * TLS on 3001 comes back as "ssl/nessus", because 3001 was Nessus's port in
+   * the 2000s. Rendering that identically to a real detection tells you a
+   * vulnerability scanner is running on your router. It isn't.
+   */
+  guessed: boolean;
   risk: string | null; // note if this exposure is worth attention
 }
 
@@ -128,7 +139,7 @@ async function assertInSubnet(ip: string): Promise<void> {
 }
 
 /** Parse nmap -sV normal output into open-port rows. */
-function parsePorts(stdout: string): OpenPort[] {
+export function parsePorts(stdout: string): OpenPort[] {
   const ports: OpenPort[] = [];
   for (const line of stdout.split("\n")) {
     // e.g. "22/tcp   open  ssh     OpenSSH 9.0 (protocol 2.0)"
@@ -137,10 +148,25 @@ function parsePorts(stdout: string): OpenPort[] {
     const state = m[3].toLowerCase();
     if (!state.startsWith("open")) continue; // skip closed / filtered
     const port = Number(m[1]);
-    const svcRaw = m[4]?.replace(/\?+$/, ""); // nmap marks guesses with a trailing "?"
+    const raw = m[4] ?? "";
+    const marked = /\?+$/.test(raw); // nmap's own "I'm guessing" marker
+    const svcRaw = raw.replace(/\?+$/, "");
     const service = svcRaw && svcRaw !== "unknown" ? svcRaw : null;
     const product = m[5]?.trim() || null;
-    ports.push({ port, proto: m[2], service, product, risk: riskFor(port, service) });
+    // No version banner and no confirmation means the name came from the port
+    // table. The discovery pass runs without -sV at all, so everything it
+    // reports is a guess until the version pass confirms it.
+    const guessed = service !== null && (marked || product === null);
+    ports.push({
+      port,
+      proto: m[2],
+      service,
+      product,
+      guessed,
+      // Never let a guessed NAME raise an alarm — port-based rules still apply,
+      // so a genuinely risky port is still flagged on its number alone.
+      risk: riskFor(port, guessed ? null : service),
+    });
   }
   return ports;
 }

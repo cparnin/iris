@@ -9,8 +9,11 @@
 #   ./polaris logs     # tail the log
 #   ./polaris open     # open the dashboard
 #
-# Polaris runs as a macOS LaunchAgent. This is the only thing you need to run;
-# it exists so you never have to type `launchctl bootout gui/501/com.polaris...`.
+#   ./polaris install    # set up auto-start at login (run once)
+#   ./polaris uninstall  # remove it entirely
+#
+# Polaris runs as a macOS LaunchAgent. This is the only file you need; it exists
+# so you never have to type `launchctl bootout gui/501/com.polaris...`.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,6 +24,17 @@ TARGET="gui/$(id -u)/$LABEL"
 URL="http://127.0.0.1:4000"
 
 serving() { curl -sf -o /dev/null --max-time 3 "$URL/api/health"; }
+loaded() { launchctl print "$TARGET" >/dev/null 2>&1; }
+
+# `launchctl bootout` returns before the job is actually gone, so bootstrapping
+# straight afterwards fails with "Bootstrap failed: 5: Input/output error".
+wait_unloaded() {
+  for _ in $(seq 1 20); do
+    loaded || return 0
+    sleep 0.5
+  done
+  return 1
+}
 
 # launchctl returns before the server is listening, so wait for a real response.
 wait_ready() {
@@ -35,20 +49,21 @@ wait_ready() {
 case "${1:-status}" in
   status|"")
     if serving; then echo "Polaris: RUNNING → $URL"
-    elif launchctl print "$TARGET" >/dev/null 2>&1; then
+    elif loaded; then
       echo "Polaris: loaded but not answering (check: ./polaris logs)"
     else echo "Polaris: STOPPED  (start it with: ./polaris start)"; fi
     ;;
 
   start)
     if serving; then echo "Polaris is already running → $URL"; exit 0; fi
-    [ -f "$PLIST" ] || { echo "Not installed. Run ./scripts/install-autostart.sh first."; exit 1; }
+    [ -f "$PLIST" ] || { echo "Not installed yet. Run: ./polaris install"; exit 1; }
     launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null
     wait_ready "Starting"
     ;;
 
   stop)
     launchctl bootout "$TARGET" 2>/dev/null
+    wait_unloaded
     echo "Polaris stopped. It stays off until you run: ./polaris start"
     echo "(It also comes back on its own at your next login.)"
     ;;
@@ -66,6 +81,62 @@ case "${1:-status}" in
   logs) echo "Tailing $LOG  (ctrl-C to quit)"; exec tail -f "$LOG" ;;
   open) exec open "$URL" ;;
 
-  -h|--help|help) sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
-  *) echo "usage: ./polaris {status|start|stop|restart|rebuild|logs|open}" >&2; exit 2 ;;
+  install)
+    # Writes the LaunchAgent so Polaris starts at login and restarts if it
+    # crashes. Paths are derived from this repo and $HOME — nothing hardcoded.
+    mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+    cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>$ROOT/scripts/polaris-start.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$ROOT</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>$LOG</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/polaris-dashboard.err.log</string>
+</dict>
+</plist>
+EOF
+    launchctl bootout "$TARGET" 2>/dev/null
+    wait_unloaded || { echo "Previous instance won't unload; try again."; exit 1; }
+    launchctl bootstrap "gui/$(id -u)" "$PLIST" || exit 1
+    launchctl kickstart -k "$TARGET" >/dev/null 2>&1
+    wait_ready "Installing —"
+    echo "  Auto-starts at login. Logs: $LOG"
+    echo "  Remove it with: ./polaris uninstall"
+    ;;
+
+  uninstall)
+    # Also boots out the pre-rename label, in case it's still lingering.
+    for l in "$LABEL" com.iris.dashboard; do
+      launchctl bootout "gui/$(id -u)/$l" 2>/dev/null
+      rm -f "$HOME/Library/LaunchAgents/$l.plist"
+    done
+    wait_unloaded
+    echo "Polaris auto-start removed, and any running instance stopped."
+    echo "(Your device history in data/ is untouched.)"
+    ;;
+
+  -h|--help|help) sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
+  *)
+    echo "usage: ./polaris {status|start|stop|restart|rebuild|logs|open|install|uninstall}" >&2
+    exit 2
+    ;;
 esac

@@ -159,7 +159,11 @@ export function DeviceCard({ device: d, isNew, onRename, onTrust }: Props) {
                 {scan.ports.map((p) => (
                   <span
                     key={`${p.port}/${p.proto}`}
-                    title={p.product ?? p.service ?? ""}
+                    title={
+                      p.guessed
+                        ? `Unconfirmed — "${p.service}" is only the name registered for port ${p.port}`
+                        : (p.product ?? p.service ?? "")
+                    }
                     className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${
                       p.risk
                         ? "bg-red-500/15 text-red-300"
@@ -167,6 +171,7 @@ export function DeviceCard({ device: d, isNew, onRename, onTrust }: Props) {
                     }`}
                   >
                     {p.port} {p.service ?? p.proto}
+                    {p.guessed && <span className="text-zinc-500">?</span>}
                   </span>
                 ))}
               </div>

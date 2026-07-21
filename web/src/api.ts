@@ -50,6 +50,8 @@ export interface OpenPort {
   port: number;
   proto: string;
   service: string | null;
+  /** service is nmap's port-number guess, not something it identified. */
+  guessed?: boolean;
   product: string | null;
   risk: string | null;
 }

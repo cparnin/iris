@@ -51,3 +51,29 @@ test("normalizeMac still rejects genuinely malformed input", () => {
   assert.equal(normalizeMac("44:777:b:e5:19:84"), null, "three-digit octet");
   assert.equal(normalizeMac(""), null);
 });
+
+test("the OUI table resolves real vendors across the whole alphabet range", () => {
+  // The table is binary-searched rather than parsed into an object (that cost
+  // 14MB of RSS, measured). These span the first, last and middle of the file,
+  // so a broken search shows up rather than passing on one lucky lookup.
+  assert.equal(lookupVendor("00:00:01:11:22:33"), "Xerox Corporation", "first lines of the table");
+  assert.equal(lookupVendor("e4:19:7f:cd:ad:d2"), "eero inc.", "the gateway on a real network");
+  assert.equal(lookupVendor("48:a2:e6:db:70:70"), "Resideo", "mid-table");
+  assert.equal(lookupVendor("d4:54:8b:c2:b1:22"), "Intel Corporate");
+  assert.equal(lookupVendor("fc:fe:c2:00:00:00"), "Invensys Controls UK Limited", "the very last line");
+});
+
+test("vendor names with non-ASCII characters survive the table round-trip", () => {
+  // Read as latin1 this returned "Burg-WÃ¤chter Kg". 243 entries have umlauts
+  // or fullwidth CJK punctuation.
+  assert.equal(lookupVendor("30:42:25:00:00:00"), "Burg-Wächter Kg");
+  assert.equal(lookupVendor("20:32:33:00:00:00"), "Shenzhen Bilian Electronic Co.，Ltd");
+});
+
+test("an unknown, non-randomized OUI still resolves to null", () => {
+  // Binary search must not report a near-miss neighbour as a hit. 00:FF:FF
+  // sits between real entries; 01:02:03 has the multicast bit clear, so it
+  // can't be rescued by the randomized-MAC fallback either.
+  assert.equal(lookupVendor("00:ff:ff:00:00:01"), null);
+  assert.equal(lookupVendor("01:02:03:04:05:06"), null);
+});

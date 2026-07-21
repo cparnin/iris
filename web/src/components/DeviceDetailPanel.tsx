@@ -165,7 +165,16 @@ export function DeviceDetailPanel({
                   <div className="flex items-baseline gap-2">
                     <span className="font-mono tabular-nums text-white">{p.port}</span>
                     <span className="text-xs text-zinc-500">{p.proto}</span>
-                    <span className="text-zinc-300">{p.service ?? "unknown"}</span>
+                    {p.guessed ? (
+                      <span
+                        className="text-zinc-400 italic"
+                        title={`Not identified. "${p.service}" is just the name historically registered for port ${p.port} — nmap couldn't confirm what's actually running.`}
+                      >
+                        {p.service} <span className="not-italic text-zinc-500">(unconfirmed)</span>
+                      </span>
+                    ) : (
+                      <span className="text-zinc-300">{p.service ?? "unknown"}</span>
+                    )}
                     {p.product && <span className="text-xs text-zinc-500">{p.product}</span>}
                   </div>
                   {p.risk && (

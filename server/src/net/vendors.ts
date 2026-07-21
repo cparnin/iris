@@ -1,7 +1,54 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { OUI as CURATED } from "./vendors-data.js";
-import ouiDb from "./oui-db.json" with { type: "json" };
 
-const DB = ouiDb as Record<string, string>;
+/**
+ * The IEEE/Wireshark OUI table, held as one sorted blob and binary-searched.
+ *
+ * It used to be `import ouiDb from "./oui-db.json"`, which parsed 39,946
+ * entries into a JS object at startup and kept them forever: 14MB of RSS,
+ * measured, on a process whose whole job is to sit in the background — to
+ * serve about 20 lookups per scan. As a flat "OUI\tvendor\n" string it's
+ * ~1.2MB, loaded on first use, and a lookup is a dozen string comparisons.
+ */
+const here = dirname(fileURLToPath(import.meta.url));
+let blob: string | null = null;
+
+function ouiTable(): string {
+  // Must be utf8, not latin1: 243 vendor names carry umlauts or fullwidth CJK
+  // punctuation ("Burg-Wächter Kg", "Shenzhen Bilian Electronic Co.，Ltd") and
+  // latin1 silently mojibakes every one of them.
+  blob ??= readFileSync(join(here, "oui-db.txt"), "utf8");
+  return blob;
+}
+
+/** Binary search the sorted table for a 6-char uppercase OUI prefix. */
+function lookupOui(prefix: string): string | null {
+  const s = ouiTable();
+  let lo = 0;
+  let hi = s.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    // Snap to the start of whatever line `mid` landed inside.
+    const start = s.lastIndexOf("\n", mid) + 1;
+    let end = s.indexOf("\n", start);
+    if (end === -1) end = s.length;
+
+    const key = s.slice(start, start + 6);
+    if (key === prefix) return s.slice(start + 7, end);
+
+    if (key < prefix) {
+      lo = end + 1;
+    } else {
+      // Guard against the snap landing us back where we started, which would
+      // otherwise spin forever on adjacent lines.
+      if (start === 0) break;
+      hi = start - 1;
+    }
+  }
+  return null;
+}
 
 /**
  * Normalize a MAC to 12 uppercase hex chars, or null if invalid.
@@ -49,7 +96,8 @@ export function lookupVendor(mac: string): string | null {
   if (!norm) return null;
   const prefix = norm.slice(0, 6);
   if (CURATED[prefix]) return CURATED[prefix];
-  if (DB[prefix]) return DB[prefix];
+  const vendor = lookupOui(prefix);
+  if (vendor) return vendor;
   if (isRandomizedMac(norm)) return "Private (randomized MAC)";
   return null;
 }
