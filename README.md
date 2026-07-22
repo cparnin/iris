@@ -140,3 +140,7 @@ subnet that Polaris cannot see. That is the guest network working.
 ## License
 
 MIT
+
+---
+
+Built by [Chad Parnin](https://chadparnin.com).
